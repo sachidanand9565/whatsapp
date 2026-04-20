@@ -288,12 +288,6 @@ export default function InboxPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates, setTemplates]   = useState<{ id: number; name: string; language: string; body_text: string; status: string }[]>([]);
   const [sendingTpl, setSendingTpl] = useState<number | null>(null);
-  // Persist read timestamps in localStorage: { contactId: ISO timestamp }
-  const [readAt, setReadAt] = useState<Record<number, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('inbox_read_at') || '{}');
-    } catch { return {}; }
-  });
   const bottomRef                   = useRef<HTMLDivElement>(null);
   const chatRef                     = useRef<HTMLDivElement>(null);
 
@@ -355,10 +349,6 @@ export default function InboxPage() {
 
   function selectContact(c: Contact) {
     setSelected(c);
-    // Store current time as "read at" for this contact
-    const updated = { ...readAt, [c.id]: new Date().toISOString() };
-    setReadAt(updated);
-    localStorage.setItem('inbox_read_at', JSON.stringify(updated));
   }
 
   useEffect(() => {
@@ -469,12 +459,7 @@ export default function InboxPage() {
         {/* Tabs */}
         <div className="flex border-b border-gray-100">
           {(['all', 'replied', 'unread'] as const).map((t) => {
-            const unreadCount  = contacts.filter((c) => {
-              if (!Number(c.unread_count)) return false;
-              const viewedAt = readAt[c.id];
-              if (!viewedAt) return true;
-              return c.last_message_at && new Date(c.last_message_at) > new Date(viewedAt);
-            }).length;
+            const unreadCount  = contacts.filter((c) => Number(c.unread_count) > 0).length;
             const repliedCount = contacts.filter((c) => Number(c.inbound_count) > 0).length;
             const label =
               t === 'all'     ? `All (${contacts.length})` :
@@ -515,13 +500,7 @@ export default function InboxPage() {
               return c.last_message_at && new Date(c.last_message_at) > new Date(viewedAt);
             })
             .map((c) => {
-            const viewedAt = readAt[c.id];
-            const unread = (() => {
-              if (!Number(c.unread_count)) return 0;
-              if (!viewedAt) return Number(c.unread_count);
-              return c.last_message_at && new Date(c.last_message_at) > new Date(viewedAt)
-                ? Number(c.unread_count) : 0;
-            })();
+            const unread = Number(c.unread_count) || 0;
             const initial = (c.name || c.phone).charAt(0).toUpperCase();
             const avatarColors = ['bg-orange-400','bg-purple-500','bg-blue-500','bg-green-500','bg-red-400'];
             const color = avatarColors[initial.charCodeAt(0) % avatarColors.length];
