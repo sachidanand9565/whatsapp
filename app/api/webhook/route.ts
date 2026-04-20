@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Identify workspace by phoneNumberId
-  const { messages, statuses, phoneNumberId } = parseWebhookBody(body);
+  const { messages, statuses, phoneNumberId, profileNames } = parseWebhookBody(body);
 
   let workspaceId: number | null = null;
   let activeWebhooks: { url: string; secret: string | null }[] = [];
@@ -84,21 +84,29 @@ export async function POST(req: NextRequest) {
 
   // ---- Process inbound messages ----
   for (const msg of messages) {
-    const phone = normalizePhone(msg.from);
+    const phone       = normalizePhone(msg.from);
+    const profileName = profileNames[msg.from] || profileNames[phone] || null;
 
     // Upsert contact
     let contact = await query<RowDataPacket[]>(
-      'SELECT id FROM contacts WHERE workspace_id = ? AND phone = ? LIMIT 1',
+      'SELECT id, name FROM contacts WHERE workspace_id = ? AND phone = ? LIMIT 1',
       [workspaceId, phone]
     );
     let contactId: number;
     if (contact.length === 0) {
       contactId = await insert(
-        'INSERT INTO contacts (workspace_id, phone, source, opted_in) VALUES (?, ?, ?, 1)',
-        [workspaceId, phone, 'inbound']
+        'INSERT INTO contacts (workspace_id, phone, name, source, opted_in) VALUES (?, ?, ?, ?, 1)',
+        [workspaceId, phone, profileName || null, 'inbound']
       );
     } else {
       contactId = contact[0].id as number;
+      // Update profile name from WhatsApp if available (keep existing manually-set name)
+      if (profileName) {
+        await execute(
+          "UPDATE contacts SET name = ? WHERE id = ? AND (name IS NULL OR name = '')",
+          [profileName, contactId]
+        );
+      }
       // If resolved contact messages again → reopen to active inbox
       await execute(
         "UPDATE contacts SET chat_status = 'open', intervened_by = NULL WHERE id = ? AND chat_status = 'resolved'",

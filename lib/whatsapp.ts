@@ -146,14 +146,23 @@ export function parseWebhookBody(body: Record<string, unknown>): {
   messages: IncomingMessage[];
   statuses: StatusUpdate[];
   phoneNumberId: string;
+  profileNames: Record<string, string>; // waId → display name from WhatsApp profile
 } {
-  const result = { messages: [] as IncomingMessage[], statuses: [] as StatusUpdate[], phoneNumberId: '' };
+  const result = { messages: [] as IncomingMessage[], statuses: [] as StatusUpdate[], phoneNumberId: '', profileNames: {} as Record<string, string> };
   try {
     const entry     = (body.entry as Record<string, unknown>[])?.[0];
     const change    = (entry?.changes as Record<string, unknown>[])?.[0];
     const value     = change?.value as Record<string, unknown>;
 
     result.phoneNumberId = (value?.metadata as Record<string, unknown>)?.phone_number_id as string ?? '';
+
+    // Extract profile names from contacts array
+    const ctcs = (value?.contacts as Record<string, unknown>[]) ?? [];
+    for (const c of ctcs) {
+      const waId = c.wa_id as string;
+      const name = (c.profile as Record<string, unknown>)?.name as string;
+      if (waId && name) result.profileNames[waId] = name;
+    }
 
     // Inbound messages
     const msgs = (value?.messages as Record<string, unknown>[]) ?? [];

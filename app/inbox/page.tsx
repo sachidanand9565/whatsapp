@@ -183,7 +183,7 @@ function TemplateBubble({ data, status, time }: { data: TemplateContent; status:
 }
 
 // ── Contact Profile Panel ─────────────────────────────────────
-function ProfilePanel({ contact, msgCount }: { contact: Contact; msgCount: number }) {
+function ProfilePanel({ contact, templateMsgCount, sessionMsgCount }: { contact: Contact; templateMsgCount: number; sessionMsgCount: number }) {
   const [open, setOpen] = useState<Record<string, boolean>>({ info: true });
   const toggle = (k: string) => setOpen(p => ({ ...p, [k]: !p[k] }));
 
@@ -204,8 +204,8 @@ function ProfilePanel({ contact, msgCount }: { contact: Contact; msgCount: numbe
       ? [{ label: 'Intervened By', value: <span className="font-semibold text-orange-600">{contact.intervened_by}</span> }]
       : []),
     { label: 'Last Active',       value: contact.updated_at ? new Date(contact.updated_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' },
-    { label: 'Template Messages', value: msgCount },
-    { label: 'Session Messages',  value: msgCount },
+    { label: 'Template Messages', value: templateMsgCount },
+    { label: 'Session Messages',  value: sessionMsgCount },
     { label: 'Source',            value: contact.source || '—' },
     { label: 'Opted In',          value: contact.opted_in ? <span className="text-green-600 font-semibold">Yes</span> : <span className="text-red-400">No</span> },
   ];
@@ -449,7 +449,8 @@ export default function InboxPage() {
     (c.name || c.phone).toLowerCase().includes(search.toLowerCase())
   );
 
-  const templateMsgCount = messages.filter((m) => m.type === 'template').length;
+  const templateMsgCount = messages.filter((m) => m.type === 'template' && m.direction === 'outbound').length;
+  const sessionMsgCount  = messages.filter((m) => m.direction === 'outbound' && m.type !== 'template').length;
 
   return (
     <div className="h-[calc(100vh-5rem)] flex border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
@@ -738,7 +739,7 @@ export default function InboxPage() {
 
       {/* ── Right: Profile Panel ────────────────────────────── */}
       {selected && (
-        <ProfilePanel contact={selected} msgCount={templateMsgCount} />
+        <ProfilePanel contact={selected} templateMsgCount={templateMsgCount} sessionMsgCount={sessionMsgCount} />
       )}
     </div>
   );

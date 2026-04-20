@@ -19,6 +19,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Load campaign
     const camps = await query<RowDataPacket[]>(
       `SELECT c.*, t.name as tname, t.language, t.body_text,
+              t.header_type, t.header_content, t.footer_text, t.buttons,
               w.access_token, w.phone_number_id
        FROM campaigns c
        JOIN templates t ON t.id = c.template_id
@@ -89,11 +90,30 @@ async function sendBulk(
 
       const wamid = (result?.messages as Record<string, unknown>[])?.[0]?.id as string;
 
+      // Build rendered body with variables replaced
+      let bodyText = (camp.body_text as string) || '';
+      const vars = (camp.template_vars as Record<string, string>) || {};
+      for (const [k, v] of Object.entries(vars)) {
+        bodyText = bodyText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+      }
+      let buttons: unknown[] = [];
+      try { buttons = JSON.parse((camp.buttons as string) || '[]'); } catch { buttons = []; }
+
+      const templateContent = JSON.stringify({
+        __type:         'template',
+        template_name:  camp.tname,
+        header_type:    camp.header_type    || 'NONE',
+        header_content: camp.header_content || '',
+        body:           bodyText,
+        footer:         camp.footer_text    || '',
+        buttons,
+      });
+
       // Store message
       const msgId = await insert(
         `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at)
          VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', NOW())`,
-        [workspaceId, contact.contact_id, wamid, camp.tname, campaignId]
+        [workspaceId, contact.contact_id, wamid, templateContent, campaignId]
       );
 
       await execute(
