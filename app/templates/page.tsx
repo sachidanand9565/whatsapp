@@ -4,7 +4,7 @@ import { apiFetch } from '@/hooks/useApi';
 import {
   Plus, CheckCircle, Clock, XCircle, X,
   Image, FileText, Video, AlignLeft,
-  Link2, Phone, MessageSquare, Eye, RefreshCw,
+  Link2, Phone, MessageSquare, Eye, RefreshCw, Copy, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Template } from '@/types';
@@ -82,6 +82,8 @@ export default function TemplatesPage() {
   const [activeTab, setActiveTab]     = useState('ALL');
   const [showCreate, setShowCreate]   = useState(false);
   const [previewTpl, setPreviewTpl]   = useState<Template | null>(null);
+  const [copyTpl, setCopyTpl]         = useState<Template | null>(null);
+  const [deletingId, setDeletingId]   = useState<number | null>(null);
 
   function load() {
     setLoading(true);
@@ -124,6 +126,26 @@ export default function TemplatesPage() {
       toast.error(err instanceof Error ? err.message : 'Sync error');
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function deleteTemplate(id: number, name: string) {
+    if (!confirm(`Delete template "${name}"? This will also remove it from Meta.`)) return;
+    setDeletingId(id);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`/api/templates/${id}`, {
+        method:  'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Delete failed'); return; }
+      toast.success('Template deleted');
+      load();
+    } catch {
+      toast.error('Delete failed');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -320,12 +342,31 @@ export default function TemplatesPage() {
                       </td>
 
                       {/* Actions */}
-                      <td className="px-4 py-3.5 text-center">
-                        <button
-                          onClick={() => setPreviewTpl(t)}
-                          className="inline-flex items-center gap-1.5 text-xs font-medium bg-whatsapp-green hover:bg-whatsapp-teal text-white px-3 py-1.5 rounded-lg transition-colors">
-                          <Eye size={13} /> Preview
-                        </button>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setPreviewTpl(t)}
+                            title="Preview"
+                            className="inline-flex items-center gap-1 text-xs font-medium bg-whatsapp-green hover:bg-whatsapp-teal text-white px-2.5 py-1.5 rounded-lg transition-colors">
+                            <Eye size={13} /> Preview
+                          </button>
+                          <button
+                            onClick={() => setCopyTpl(t)}
+                            title="Copy template"
+                            className="inline-flex items-center gap-1 text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-700 px-2.5 py-1.5 rounded-lg transition-colors">
+                            <Copy size={13} /> Copy
+                          </button>
+                          <button
+                            onClick={() => deleteTemplate(t.id, t.name)}
+                            disabled={deletingId === t.id}
+                            title="Delete template"
+                            className="inline-flex items-center gap-1 text-xs font-medium bg-red-100 hover:bg-red-200 text-red-700 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                            {deletingId === t.id
+                              ? <div className="w-3 h-3 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                              : <Trash2 size={13} />}
+                            Delete
+                          </button>
+                        </div>
                       </td>
 
                     </tr>
@@ -342,6 +383,13 @@ export default function TemplatesPage() {
         <TemplateModal
           onClose={() => setShowCreate(false)}
           onSaved={() => { setShowCreate(false); load(); }}
+        />
+      )}
+      {copyTpl && (
+        <TemplateModal
+          initialData={copyTpl}
+          onClose={() => setCopyTpl(null)}
+          onSaved={() => { setCopyTpl(null); load(); }}
         />
       )}
       {previewTpl && (
@@ -489,14 +537,34 @@ function TemplatePreviewModal({ template: t, onClose }: { template: Template; on
 // ════════════════════════════════════════════════════════════
 // CREATE TEMPLATE MODAL
 // ════════════════════════════════════════════════════════════
-function TemplateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<TemplateForm>({
-    name: '', language: 'en', category: 'UTILITY',
-    header_type: 'NONE', header_content: '',
-    body_text: '', footer_text: '',
+function TemplateModal({
+  onClose, onSaved, initialData,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+  initialData?: Template;
+}) {
+  const isCopy = !!initialData;
+  const [form, setForm] = useState<TemplateForm>(() => {
+    if (!initialData) return {
+      name: '', language: 'en', category: 'UTILITY',
+      header_type: 'NONE', header_content: '',
+      body_text: '', footer_text: '',
+    };
+    return {
+      name:           `copy_of_${initialData.name}`,
+      language:       initialData.language       || 'en',
+      category:       initialData.category       || 'UTILITY',
+      header_type:    (initialData.header_type   || 'NONE') as TemplateForm['header_type'],
+      header_content: initialData.header_content || '',
+      body_text:      initialData.body_text       || '',
+      footer_text:    initialData.footer_text     || '',
+    };
   });
   const [varSamples, setVarSamples] = useState<Record<string, string>>({});
-  const [buttons, setButtons]       = useState<Button[]>([]);
+  const [buttons, setButtons]       = useState<Button[]>(() =>
+    initialData ? parseJsonColumn<Button[]>(initialData.buttons, []) : []
+  );
   const [saving, setSaving]         = useState(false);
 
   const detectedVars = useMemo(() => extractVariables(form.body_text), [form.body_text]);
@@ -576,7 +644,9 @@ function TemplateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">Create WhatsApp Template</h2>
+          <h2 className="text-lg font-bold text-gray-900">
+            {isCopy ? `Copy Template — ${initialData?.name}` : 'Create WhatsApp Template'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={20} /></button>
         </div>
 
