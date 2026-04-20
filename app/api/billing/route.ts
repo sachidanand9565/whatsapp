@@ -4,7 +4,7 @@ import { query } from '@/lib/db';
 import { apiSuccess, apiError } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
-const GV = 'v20.0';
+const GV = 'v22.0';
 const FREE_TIER = 1000;
 
 interface DataPoint {
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     url.searchParams.set('start', String(start));
     url.searchParams.set('end', String(end));
     url.searchParams.set('granularity', 'DAILY');
-    url.searchParams.set('dimensions', JSON.stringify(['CONVERSATION_CATEGORY']));
+    url.searchParams.set('dimensions', '["CONVERSATION_CATEGORY"]');
     url.searchParams.set('access_token', access_token);
 
     const res      = await fetch(url.toString());
@@ -50,8 +50,16 @@ export async function GET(req: NextRequest) {
     if (metaData.error) {
       return apiError(`Meta: ${metaData.error.message}`, 400);
     }
+    console.log('[billing] meta url:', url.toString());
+    console.log('[billing] meta response:', JSON.stringify(metaData));
 
-    const dataPoints: DataPoint[] = metaData.data?.[0]?.data_points || [];
+    const dataPoints: DataPoint[] = (metaData.data || []).flatMap(
+      (d: { data_points?: DataPoint[]; conversation_category?: string }) =>
+        (d.data_points || []).map((dp: DataPoint) => ({
+          ...dp,
+          conversation_category: dp.conversation_category || d.conversation_category,
+        }))
+    );
 
     type DayRow = { date: string; marketing: number; utility: number; authentication: number; service: number; cost: number };
     type CategoryRow = { conversations: number; cost: number };

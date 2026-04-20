@@ -303,13 +303,41 @@ export default function InboxPage() {
 
   useEffect(() => {
     loadContacts();
-    const iv = setInterval(loadContacts, 10000); // refresh unread counts every 10s
+    const iv = setInterval(loadContacts, 60_000); // fallback poll every 60s
     return () => clearInterval(iv);
   }, [loadContacts]);
 
   const loadMessages = useCallback((contactId: number) => {
     apiFetch(`/api/messages?contactId=${contactId}&limit=80`).then((r) => setMessages(r.data || []));
   }, []);
+
+  // Track selected contact in a ref so the SSE handler always sees the latest value
+  const selectedRef = useRef<Contact | null>(null);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // SSE — real-time updates triggered by incoming webhook messages
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data) as { type?: string; contactId?: number };
+        if (data.type === 'new_message') {
+          loadContacts();
+          if (selectedRef.current?.id === data.contactId) {
+            loadMessages(data.contactId!);
+          }
+        }
+      } catch { /* ignore malformed frames */ }
+    };
+
+    es.onerror = () => es.close(); // browser will reconnect on its own after close
+
+    return () => es.close();
+  }, [loadContacts, loadMessages]);
 
   const loadTemplates = useCallback(() => {
     if (templates.length > 0) return;
@@ -336,8 +364,6 @@ export default function InboxPage() {
   useEffect(() => {
     if (!selected) return;
     loadMessages(selected.id);
-    const iv = setInterval(() => loadMessages(selected.id), 5000);
-    return () => clearInterval(iv);
   }, [selected, loadMessages]);
 
   useEffect(() => {

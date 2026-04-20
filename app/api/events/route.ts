@@ -1,0 +1,70 @@
+/**
+ * GET /api/events?token=<jwt>
+ * Server-Sent Events stream — pushes new_message events to the inbox in real-time.
+ * EventSource (browser) cannot send custom headers, so the JWT is passed as a query param.
+ */
+import { NextRequest } from 'next/server';
+import { verifyToken } from '@/lib/auth';
+import { subscribeSSE, SSEPayload } from '@/lib/sse';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  const token = req.nextUrl.searchParams.get('token');
+  if (!token) return new Response('Unauthorized', { status: 401 });
+
+  let workspaceId: number;
+  try {
+    workspaceId = verifyToken(token).workspaceId;
+  } catch {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const enqueue = (data: object) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // client already disconnected
+        }
+      };
+
+      // Confirm connection
+      enqueue({ type: 'connected' });
+
+      // Forward workspace events to this SSE client
+      const unsubscribe = subscribeSSE(workspaceId, (payload: SSEPayload) => {
+        enqueue(payload);
+      });
+
+      // Keep-alive ping every 25 s (proxies drop idle SSE streams)
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(': ping\n\n'));
+        } catch {
+          clearInterval(heartbeat);
+          unsubscribe();
+        }
+      }, 25_000);
+
+      // Clean up when client disconnects
+      req.signal.addEventListener('abort', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+        try { controller.close(); } catch { /* already closed */ }
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection':    'keep-alive',
+      'X-Accel-Buffering': 'no', // disable nginx buffering
+    },
+  });
+}

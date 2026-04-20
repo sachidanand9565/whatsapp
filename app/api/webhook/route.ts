@@ -7,6 +7,7 @@ import { query, insert, execute } from '@/lib/db';
 import { parseWebhookBody, sendTextMessage } from '@/lib/whatsapp';
 import { normalizePhone } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
+import { emitSSE } from '@/lib/sse';
 
 // ---- GET: Verify webhook with Meta ----
 export async function GET(req: NextRequest) {
@@ -150,6 +151,9 @@ export async function POST(req: NextRequest) {
         [workspaceId, contactId, msg.wamid, msg.type, content, msg.timestamp]
       );
     }
+
+    // Notify connected inbox clients instantly via SSE
+    emitSSE({ type: 'new_message', workspaceId, contactId });
 
     // ---- Forward to all active custom chatbot webhooks (non-blocking) ----
     if (activeWebhooks.length > 0) {
