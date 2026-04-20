@@ -297,17 +297,16 @@ export default function InboxPage() {
   const bottomRef                   = useRef<HTMLDivElement>(null);
   const chatRef                     = useRef<HTMLDivElement>(null);
 
+  // SSE-driven unread counts — persisted in localStorage, cleared on select
+  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('unreadCounts') || '{}'); } catch { return {}; }
+  });
+  const saveUnread = (counts: Record<number, number>) => {
+    localStorage.setItem('unreadCounts', JSON.stringify(counts));
+  };
+
   const loadContacts = useCallback(() => {
-    apiFetch('/api/contacts?limit=200&chatStatus=active').then((r) => {
-      const readMap: Record<string, number> = JSON.parse(localStorage.getItem('inboxRead') || '{}');
-      const data = (r.data?.data || []).map((c: Contact) => {
-        const readAt   = readMap[String(c.id)];
-        const lastMsgAt = c.last_message_at ? toLocalDate(c.last_message_at).getTime() : 0;
-        if (readAt && lastMsgAt <= readAt) return { ...c, unread_count: 0 };
-        return c;
-      });
-      setContacts(data);
-    });
+    apiFetch('/api/contacts?limit=200&chatStatus=active').then((r) => setContacts(r.data?.data || []));
   }, []);
 
   useEffect(() => {
@@ -338,6 +337,13 @@ export default function InboxPage() {
           loadContacts();
           if (selectedRef.current?.id === data.contactId) {
             loadMessages(data.contactId!);
+          } else if (data.contactId) {
+            // Increment badge only for contacts NOT currently open
+            setUnreadCounts(prev => {
+              const next = { ...prev, [data.contactId!]: (prev[data.contactId!] || 0) + 1 };
+              saveUnread(next);
+              return next;
+            });
           }
         }
       } catch { /* ignore malformed frames */ }
@@ -364,11 +370,11 @@ export default function InboxPage() {
 
   function selectContact(c: Contact) {
     setSelected(c);
-    // Persist read state so badge stays gone after refresh, but reappears on new messages
-    const readMap = JSON.parse(localStorage.getItem('inboxRead') || '{}');
-    readMap[String(c.id)] = Date.now();
-    localStorage.setItem('inboxRead', JSON.stringify(readMap));
-    setContacts(prev => prev.map(x => x.id === c.id ? { ...x, unread_count: 0 } : x));
+    setUnreadCounts(prev => {
+      const next = { ...prev, [c.id]: 0 };
+      saveUnread(next);
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -479,7 +485,7 @@ export default function InboxPage() {
         {/* Tabs */}
         <div className="flex border-b border-gray-100">
           {(['all', 'replied', 'unread'] as const).map((t) => {
-            const unreadCount  = contacts.filter((c) => Number(c.unread_count) > 0).length;
+            const unreadCount  = contacts.filter((c) => (unreadCounts[c.id] || 0) > 0).length;
             const repliedCount = contacts.filter((c) => Number(c.inbound_count) > 0).length;
             const label =
               t === 'all'     ? `All (${contacts.length})` :
@@ -514,10 +520,10 @@ export default function InboxPage() {
               if (tab === 'all') return true;
               if (tab === 'replied') return Number(c.inbound_count) > 0;
               // unread tab
-              return Number(c.unread_count) > 0;
+              return (unreadCounts[c.id] || 0) > 0;
             })
             .map((c) => {
-            const unread = Number(c.unread_count) || 0;
+            const unread = unreadCounts[c.id] || 0;
             const initial = (c.name || c.phone).charAt(0).toUpperCase();
             const avatarColors = ['bg-orange-400','bg-purple-500','bg-blue-500','bg-green-500','bg-red-400'];
             const color = avatarColors[initial.charCodeAt(0) % avatarColors.length];
