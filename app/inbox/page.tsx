@@ -209,7 +209,7 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount }: { contact:
     ...(contact.chat_status === 'intervened' && contact.intervened_by
       ? [{ label: 'Intervened By', value: <span className="font-semibold text-orange-600">{contact.intervened_by}</span> }]
       : []),
-    { label: 'Last Active',       value: contact.updated_at ? toLocalDate(contact.updated_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12: true }) : '—' },
+    { label: 'Last Active',       value: contact.updated_at ? toLocalDate(contact.updated_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—' },
     { label: 'Template Messages', value: templateMsgCount },
     { label: 'Session Messages',  value: sessionMsgCount },
     { label: 'Source',            value: contact.source || '—' },
@@ -535,7 +535,7 @@ export default function InboxPage() {
                     </p>
                     {c.last_message_at && (
                       <span className="text-xs text-gray-400 flex-shrink-0">
-                        {toLocalDate(c.last_message_at!).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        {toLocalDate(c.last_message_at!).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
                       </span>
                     )}
                   </div>
@@ -587,16 +587,18 @@ export default function InboxPage() {
               const contacts = parseContactsContent(m.content);
               const repliedMsg = m.replied_to_wamid ? messages.find((x) => x.wamid === m.replied_to_wamid) : null;
               const msgDate  = toLocalDate(m.created_at);
-              const timeStr  = msgDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+              const timeStr  = msgDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
 
               // Date separator logic
               const prevDate   = idx > 0 ? toLocalDate(messages[idx - 1].created_at) : null;
-              const isNewDay   = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
-              const today      = new Date();
-              const yesterday  = new Date(); yesterday.setDate(today.getDate() - 1);
-              const dateLabel  = msgDate.toDateString() === today.toDateString()     ? 'Today'
-                               : msgDate.toDateString() === yesterday.toDateString() ? 'Yesterday'
-                               : msgDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+              const todayIST     = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+              const yesterdayIST = new Date(todayIST); yesterdayIST.setDate(todayIST.getDate() - 1);
+              const msgDateIST   = new Date(msgDate.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+              const prevDateIST  = prevDate ? new Date(prevDate.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })) : null;
+              const isNewDay   = !prevDateIST || msgDateIST.toDateString() !== prevDateIST.toDateString();
+              const dateLabel  = msgDateIST.toDateString() === todayIST.toDateString()     ? 'Today'
+                               : msgDateIST.toDateString() === yesterdayIST.toDateString() ? 'Yesterday'
+                               : msgDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
 
               return (
                 <div key={m.id}>
