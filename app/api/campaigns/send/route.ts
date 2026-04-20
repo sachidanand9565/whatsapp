@@ -1,20 +1,19 @@
 /**
- * POST /api/campaigns/[id]/send
- * API Campaign endpoint — send a single WhatsApp template message.
+ * POST /api/campaigns/send
+ * Fixed URL — AiSensy-compatible endpoint.
+ * Campaign is selected by `campaignName` in the body (no ID in URL).
  *
- * AiSensy-compatible body:
+ * Body:
  * {
- *   "apiKey": "<bearer-token>",          // alternative to Authorization header
- *   "destination": "919876543210",
- *   "templateParams": ["John"],           // positional variables (index 1, 2, …)
+ *   "apiKey":              "<your-jwt-token>",
+ *   "campaignName":        "ro_service_reminder_assistant_new8",
+ *   "destination":         "919876543210",
+ *   "userName":            "RO CARE INDIA",          // optional
+ *   "templateParams":      ["John"],                  // positional vars
+ *   "source":              "landing-page",             // optional
  *   "paramsFallbackValue": { "FirstName": "user" },
- *   "userName": "My Brand",              // optional, stored for reference
- *   "source": "landing-page",            // optional
- *   "media": {}, "buttons": [], ...      // ignored — template config comes from DB
+ *   "media": {}, "buttons": [], "carouselCards": [], "location": {}, "attributes": {}
  * }
- *
- * Legacy body (still supported):
- * { phone: "919876543210", variables?: { "1": "John" } }
  */
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
@@ -23,22 +22,19 @@ import { apiSuccess, apiError, normalizePhone } from '@/lib/utils';
 import { sendTemplateMessage } from '@/lib/whatsapp';
 import { RowDataPacket } from 'mysql2';
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest) {
   try {
-    // Support apiKey in body as alternative to Authorization header
-    let payload: ReturnType<typeof requireAuth>;
+    // ── Parse raw body first so we can read apiKey ────────────
     let rawBody: Record<string, unknown>;
     try {
-      rawBody = await req.clone().json() as Record<string, unknown>;
+      rawBody = await req.json() as Record<string, unknown>;
     } catch {
-      rawBody = {};
+      return apiError('Invalid JSON body', 400);
     }
 
+    // ── Auth: apiKey in body OR Authorization header ──────────
+    let payload: ReturnType<typeof requireAuth>;
     if (rawBody.apiKey) {
-      // Inject apiKey as a Bearer token so requireAuth can verify it
       const syntheticReq = new Request(req.url, {
         method:  req.method,
         headers: { ...Object.fromEntries(req.headers), authorization: `Bearer ${rawBody.apiKey}` },
@@ -49,11 +45,17 @@ export async function POST(
       payload = requireAuth(req);
     }
 
-    const campaignId = Number(params.id);
+    // ── Validate required fields ──────────────────────────────
+    const campaignName = rawBody.campaignName as string | undefined;
+    const destination  = (rawBody.destination || rawBody.phone) as string | undefined;
 
-    if (!campaignId) return apiError('Invalid campaign ID', 400);
+    if (!campaignName) return apiError('campaignName is required', 400);
+    if (!destination)  return apiError('destination is required', 400);
 
-    // ── Load campaign + template ─────────────────────────────
+    const normalizedPhone = normalizePhone(destination);
+    if (!normalizedPhone)  return apiError('Invalid phone number', 400);
+
+    // ── Look up campaign by name ──────────────────────────────
     const rows = await query<RowDataPacket[]>(
       `SELECT c.*, t.name as template_name, t.language,
               t.body_text, t.header_type, t.header_content, t.footer_text, t.buttons,
@@ -61,53 +63,41 @@ export async function POST(
        FROM campaigns c
        JOIN templates t  ON t.id = c.template_id
        JOIN workspaces w ON w.id = c.workspace_id
-       WHERE c.id = ? AND c.workspace_id = ? AND c.campaign_type = 'api'`,
-      [campaignId, payload.workspaceId]
+       WHERE c.name = ? AND c.workspace_id = ? AND c.campaign_type = 'api'`,
+      [campaignName, payload.workspaceId]
     );
 
-    if (rows.length === 0) return apiError('API campaign not found', 404);
+    if (rows.length === 0)
+      return apiError(`API campaign "${campaignName}" not found`, 404);
 
     const campaign = rows[0];
 
     const accessToken   = (campaign.access_token   as string) || process.env.WHATSAPP_ACCESS_TOKEN || '';
     const phoneNumberId = (campaign.phone_number_id as string) || process.env.PHONE_NUMBER_ID      || '';
 
-    if (!accessToken || !phoneNumberId) return apiError('WhatsApp credentials not configured', 400);
+    if (!accessToken || !phoneNumberId)
+      return apiError('WhatsApp credentials not configured', 400);
 
-    // ── Parse request body (AiSensy format + legacy format) ──
-    const body = rawBody as {
-      // AiSensy-style
-      destination?:        string;
-      templateParams?:     string[];
-      paramsFallbackValue?: Record<string, string>;
-      // Legacy style
-      phone?:              string;
-      variables?:          Record<string, string>;
-    };
-
-    const rawPhone = body.destination || body.phone;
-    if (!rawPhone) return apiError('destination (or phone) is required', 400);
-
-    const normalizedPhone = normalizePhone(rawPhone);
-    if (!normalizedPhone) return apiError('Invalid phone number', 400);
-
-    // Build positional variables map { "1": val, "2": val, … }
-    let variables: Record<string, string> = body.variables || {};
-    if (body.templateParams && body.templateParams.length > 0) {
+    // ── Build variables map ───────────────────────────────────
+    // templateParams array → { "1": val, "2": val, … }
+    let variables: Record<string, string> = (rawBody.variables as Record<string, string>) || {};
+    const templateParams = rawBody.templateParams as string[] | undefined;
+    if (templateParams && templateParams.length > 0) {
       variables = {};
-      body.templateParams.forEach((v, i) => { variables[String(i + 1)] = v; });
+      templateParams.forEach((v, i) => { variables[String(i + 1)] = v; });
     }
 
-    // Apply fallback values for any variable still equal to its placeholder token
-    if (body.paramsFallbackValue) {
-      for (const [k, fallback] of Object.entries(body.paramsFallbackValue)) {
+    // Apply fallback for placeholder tokens like "$FirstName" or empty strings
+    const fallbacks = rawBody.paramsFallbackValue as Record<string, string> | undefined;
+    if (fallbacks) {
+      for (const [k, fallback] of Object.entries(fallbacks)) {
         for (const [idx, val] of Object.entries(variables)) {
           if (val === `$${k}` || val === '') variables[idx] = fallback;
         }
       }
     }
 
-    // ── Upsert contact ───────────────────────────────────────
+    // ── Upsert contact ────────────────────────────────────────
     const existing = await query<RowDataPacket[]>(
       'SELECT id FROM contacts WHERE workspace_id = ? AND phone = ? LIMIT 1',
       [payload.workspaceId, normalizedPhone]
@@ -122,9 +112,9 @@ export async function POST(
       );
     }
 
-    // ── Build template components ────────────────────────────
+    // ── Build template components ─────────────────────────────
     const components: { type: string; parameters: { type: string; text: string }[] }[] = [];
-    if (variables && Object.keys(variables).length > 0) {
+    if (Object.keys(variables).length > 0) {
       const sortedKeys = Object.keys(variables).sort((a, b) => Number(a) - Number(b));
       components.push({
         type: 'body',
@@ -132,7 +122,7 @@ export async function POST(
       });
     }
 
-    // ── Send via Meta API ────────────────────────────────────
+    // ── Send via Meta API ─────────────────────────────────────
     const result = await sendTemplateMessage(
       accessToken,
       phoneNumberId,
@@ -144,19 +134,17 @@ export async function POST(
 
     const wamid = (result?.messages as Record<string, unknown>[])?.[0]?.id as string | undefined;
 
-    // Build body with variables replaced
+    // Build rendered body text
     let bodyText = (campaign.body_text as string) || '';
-    if (variables && bodyText) {
+    if (bodyText) {
       for (const [k, v] of Object.entries(variables)) {
         bodyText = bodyText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
       }
     }
 
-    // Parse buttons
     let buttons: unknown[] = [];
     try { buttons = JSON.parse((campaign.buttons as string) || '[]'); } catch { buttons = []; }
 
-    // Store full template structure as JSON so inbox can render it properly
     const templateContent = JSON.stringify({
       __type:         'template',
       template_name:  campaign.template_name,
@@ -167,35 +155,31 @@ export async function POST(
       buttons,
     });
 
-    // ── Store message row (enables webhook delivery tracking) ─
+    // ── Persist message + campaign_contacts ───────────────────
     const msgId = await insert(
       `INSERT INTO messages
          (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at)
        VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', NOW())`,
-      [payload.workspaceId, contactId, wamid || null, templateContent, campaignId]
+      [payload.workspaceId, contactId, wamid || null, templateContent, campaign.id]
     );
 
-    // ── Add campaign_contacts entry (enables contact list + status tracking) ─
     await insert(
       `INSERT INTO campaign_contacts (campaign_id, contact_id, message_id, status, sent_at)
        VALUES (?, ?, ?, 'sent', NOW())
        ON DUPLICATE KEY UPDATE message_id = VALUES(message_id), status = 'sent', sent_at = NOW()`,
-      [campaignId, contactId, msgId]
+      [campaign.id, contactId, msgId]
     );
 
-    // ── Update campaign counters ─────────────────────────────
     await execute(
-      `UPDATE campaigns
-       SET sent_count = sent_count + 1, total_contacts = total_contacts + 1
-       WHERE id = ?`,
-      [campaignId]
+      `UPDATE campaigns SET sent_count = sent_count + 1, total_contacts = total_contacts + 1 WHERE id = ?`,
+      [campaign.id]
     );
 
     return apiSuccess({ sent: true, phone: normalizedPhone, wamid });
 
   } catch (err: unknown) {
     if (err instanceof Error && err.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
-    console.error('[campaign/send]', err);
+    console.error('[campaigns/send]', err);
     return apiError('Failed to send message', 500);
   }
 }

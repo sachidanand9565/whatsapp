@@ -339,49 +339,73 @@ export default function CampaignDetailPage() {
 }
 
 // ── Test Campaign Panel ────────────────────────────────────────
-// Default values for common variable positions
-const VAR_DEFAULTS: Record<string, string> = {
-  '1': '$FirstName',
-  '2': '$LastName',
-  '3': '$Phone',
-  '4': '$Email',
-  '5': '$CompanyName',
-};
+const VAR_DEFAULTS = ['$FirstName', '$LastName', '$Phone', '$Email', '$CompanyName'];
 
-function buildDefaultVars(bodyText: string): string {
+function buildDefaultParams(bodyText: string): string {
   const matches = bodyText?.match(/\{\{(\d+)\}\}/g) || [];
-  const nums    = [...new Set(matches.map((m) => m.replace(/\{\{|\}\}/g, '')))].sort((a, b) => Number(a) - Number(b));
-  if (nums.length === 0) return '{}';
-  const obj: Record<string, string> = {};
-  for (const n of nums) obj[n] = VAR_DEFAULTS[n] || `Value${n}`;
-  return JSON.stringify(obj, null, 2);
+  const count   = [...new Set(matches.map((m) => m.replace(/\{\{|\}\}/g, '')))].length;
+  if (count === 0) return '[]';
+  const arr = Array.from({ length: count }, (_, i) => VAR_DEFAULTS[i] || `Value${i + 1}`);
+  return JSON.stringify(arr, null, 2);
+}
+
+function buildFallback(params: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  params.forEach((v) => {
+    const m = v.match(/^\$(\w+)$/);
+    if (m) map[m[1]] = m[1].toLowerCase();
+  });
+  return map;
 }
 
 function TestPanel({ campaign, onClose }: { campaign: CampaignDetail; onClose: () => void }) {
-  const defaultVars               = buildDefaultVars(campaign.body_text);
+  const defaultParams             = buildDefaultParams(campaign.body_text);
   const [phone, setPhone]         = useState('');
-  const [vars, setVars]           = useState(defaultVars);
+  const [vars, setVars]           = useState(defaultParams);
   const [sending, setSending]     = useState(false);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') || 'YOUR_JWT_TOKEN' : 'YOUR_JWT_TOKEN';
+  const token    = typeof window !== 'undefined' ? localStorage.getItem('token') || 'YOUR_JWT_TOKEN' : 'YOUR_JWT_TOKEN';
   const endpoint = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/campaigns/${campaign.id}/send`
-    : `/api/campaigns/${campaign.id}/send`;
+    ? `${window.location.origin}/api/campaigns/send`
+    : '/api/campaigns/send';
+
+  let parsedParams: string[] = [];
+  try { parsedParams = JSON.parse(vars); } catch { /* shown in UI */ }
+
+  const bodyObj = {
+    apiKey:              token,
+    campaignName:        campaign.name,
+    destination:         phone || '919876543210',
+    userName:            'YOUR_BRAND_NAME',
+    templateParams:      parsedParams,
+    source:              'api',
+    media:               {},
+    buttons:             [],
+    carouselCards:       [],
+    location:            {},
+    attributes:          {},
+    paramsFallbackValue: buildFallback(parsedParams),
+  };
 
   const curlCmd = `curl -X POST "${endpoint}" \\
-  -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
-  -d '{"phone":"${phone || '919876543210'}","variables":${vars}}'`;
+  -d '${JSON.stringify(bodyObj, null, 2)}'`;
 
   async function sendTest() {
     if (!phone) { toast.error('Enter WhatsApp number'); return; }
-    let parsedVars: Record<string, string> = {};
-    try { parsedVars = JSON.parse(vars); } catch { toast.error('Variables is not valid JSON'); return; }
+    let templateParams: string[] = [];
+    try { templateParams = JSON.parse(vars); } catch { toast.error('templateParams is not valid JSON array'); return; }
+    if (!Array.isArray(templateParams)) { toast.error('templateParams must be a JSON array like ["John"]'); return; }
     setSending(true);
     try {
-      await apiFetch(`/api/campaigns/${campaign.id}/send`, {
+      await apiFetch('/api/campaigns/send', {
         method: 'POST',
-        body:   JSON.stringify({ phone, variables: parsedVars }),
+        body:   JSON.stringify({
+          campaignName:        campaign.name,
+          destination:         phone,
+          templateParams,
+          paramsFallbackValue: buildFallback(templateParams),
+        }),
       });
       toast.success(`Message sent to ${phone}!`);
     } catch (err) {
@@ -392,43 +416,49 @@ function TestPanel({ campaign, onClose }: { campaign: CampaignDetail; onClose: (
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
-        <div className="flex items-center justify-between p-5 border-b">
-          <h2 className="font-bold text-lg flex items-center gap-2"><Zap size={18} className="text-blue-500" /> Test API Campaign</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-2xl w-full sm:max-w-lg flex flex-col max-h-[92dvh] sm:max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 sm:p-5 border-b shrink-0">
+          <h2 className="font-bold text-base sm:text-lg flex items-center gap-2">
+            <Zap size={16} className="text-blue-500" /> Test API Campaign
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1"><X size={20} /></button>
         </div>
 
-        <div className="p-5 space-y-4">
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 px-4 py-4 sm:p-5 space-y-4">
           {/* Info */}
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="bg-gray-50 rounded-lg px-3 py-2 min-w-0">
               <p className="text-gray-400 text-xs mb-0.5">Campaign</p>
-              <p className="font-medium text-gray-800 truncate">{campaign.name}</p>
+              <p className="font-medium text-gray-800 truncate text-xs sm:text-sm">{campaign.name}</p>
             </div>
-            <div>
+            <div className="bg-gray-50 rounded-lg px-3 py-2 min-w-0">
               <p className="text-gray-400 text-xs mb-0.5">Template</p>
-              <p className="font-medium text-gray-800 truncate">{campaign.template_name}</p>
+              <p className="font-medium text-gray-800 truncate text-xs sm:text-sm">{campaign.template_name}</p>
             </div>
           </div>
 
           {/* Phone */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              WhatsApp Number <span className="text-gray-400 font-normal">(with country code, no +)</span>
+              WhatsApp Number{' '}
+              <span className="text-gray-400 font-normal text-xs">(with country code, no +)</span>
             </label>
             <input value={phone} onChange={(e) => setPhone(e.target.value)}
-              className="input font-mono" placeholder="919876543210" />
+              className="input font-mono text-sm w-full" placeholder="919876543210" />
           </div>
 
           {/* Variables */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Template Variables <span className="text-gray-400 font-normal">(JSON)</span>
+              Template Params{' '}
+              <span className="text-gray-400 font-normal text-xs">(JSON array — positional)</span>
             </label>
             <textarea value={vars} onChange={(e) => setVars(e.target.value)}
-              className="input font-mono text-xs resize-none" rows={3}
-              placeholder={'{"1": "John", "2": "Order#123"}'} />
+              className="input font-mono text-xs resize-none w-full" rows={3}
+              placeholder={'["John", "Order#123"]'} />
           </div>
 
           {/* cURL preview */}
@@ -436,23 +466,24 @@ function TestPanel({ campaign, onClose }: { campaign: CampaignDetail; onClose: (
             <div className="flex items-center justify-between mb-1">
               <p className="text-xs font-medium text-gray-500">cURL</p>
               <button onClick={() => { navigator.clipboard.writeText(curlCmd); toast.success('cURL copied!'); }}
-                className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700">
+                className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 py-1 px-2 rounded">
                 <Copy size={12} /> Copy cURL
               </button>
             </div>
-            <pre className="bg-gray-900 text-green-400 text-xs p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className="bg-gray-900 text-green-400 text-[11px] p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">
               {curlCmd}
             </pre>
           </div>
 
-          {/* Buttons */}
-          <div className="flex gap-3">
-            <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button onClick={sendTest} disabled={sending}
-              className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
-              {sending ? <><RefreshCw size={14} className="animate-spin" /> Sending...</> : <><Send size={14} /> Send Test</>}
-            </button>
-          </div>
+        </div>
+
+        {/* Sticky footer buttons */}
+        <div className="flex gap-3 px-4 py-3 sm:p-5 border-t shrink-0 bg-white">
+          <button onClick={onClose} className="btn-secondary flex-1 text-sm">Cancel</button>
+          <button onClick={sendTest} disabled={sending}
+            className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-sm">
+            {sending ? <><RefreshCw size={14} className="animate-spin" /> Sending...</> : <><Send size={14} /> Send Test</>}
+          </button>
         </div>
       </div>
     </div>
