@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/hooks/useApi';
-import { Plus, Play, Radio, Zap, GitBranch, ShoppingBag, ChevronRight } from 'lucide-react';
+import { Plus, Play, Radio, Zap, GitBranch, ShoppingBag, ChevronRight, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Campaign, Template, Contact } from '@/types';
 
@@ -30,6 +30,7 @@ export default function CampaignsPage() {
   const [loading, setLoading]         = useState(true);
   const [showModal, setShowModal]     = useState(false);
   const [filterType, setFilterType]   = useState<FilterType>('all');
+  const [deletingId, setDeletingId]   = useState<number | null>(null);
 
   function load() {
     setLoading(true);
@@ -37,6 +38,26 @@ export default function CampaignsPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  async function deleteCampaign(id: number, name: string) {
+    if (!confirm(`Delete campaign "${name}"? Ye action undo nahi ho sakta.`)) return;
+    setDeletingId(id);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`/api/campaigns/${id}`, {
+        method:  'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Delete failed', { duration: 6000 }); return; }
+      toast.success('Campaign deleted');
+      load();
+    } catch {
+      toast.error('Delete failed');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function launch(id: number) {
     try {
@@ -170,6 +191,15 @@ export default function CampaignsPage() {
                         <Play size={14} /> Launch
                       </button>
                     )}
+                    <button
+                      onClick={() => deleteCampaign(c.id, c.name)}
+                      disabled={deletingId === c.id || c.status === 'running'}
+                      title={c.status === 'running' ? 'Running campaign delete nahi ho sakta' : 'Delete campaign'}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                      {deletingId === c.id
+                        ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                        : <Trash2 size={15} />}
+                    </button>
                     <ChevronRight size={16} className="text-gray-300" />
                   </div>
                 </div>

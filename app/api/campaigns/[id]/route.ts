@@ -1,10 +1,10 @@
 /**
- * GET /api/campaigns/[id]
- * Returns campaign detail + paginated contact list with message status
+ * GET    /api/campaigns/[id]  — campaign detail
+ * DELETE /api/campaigns/[id]  — delete campaign + contacts
  */
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { query } from '@/lib/db';
+import { query, execute } from '@/lib/db';
 import { apiSuccess, apiError } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
@@ -115,6 +115,35 @@ export async function GET(req: NextRequest, { params }: Params) {
   } catch (err: unknown) {
     if (err instanceof Error && err.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
     console.error('[campaign detail]', err);
+    return apiError('Server error', 500);
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: Params) {
+  try {
+    const payload    = requireAuth(req);
+    const campaignId = Number(params.id);
+    if (!campaignId || isNaN(campaignId)) return apiError('Invalid id', 400);
+
+    // Verify ownership
+    const rows = await query<RowDataPacket[]>(
+      'SELECT id, status FROM campaigns WHERE id = ? AND workspace_id = ? LIMIT 1',
+      [campaignId, payload.workspaceId]
+    );
+    if (rows.length === 0) return apiError('Campaign not found', 404);
+
+    if (rows[0].status === 'running') {
+      return apiError('Cannot delete a running campaign. Wait for it to complete.', 409);
+    }
+
+    // Delete child rows first (FK), then the campaign
+    await execute('DELETE FROM campaign_contacts WHERE campaign_id = ?', [campaignId]);
+    await execute('DELETE FROM campaigns WHERE id = ? AND workspace_id = ?', [campaignId, payload.workspaceId]);
+
+    return apiSuccess({ deleted: true });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
+    console.error('[campaign DELETE]', err);
     return apiError('Server error', 500);
   }
 }

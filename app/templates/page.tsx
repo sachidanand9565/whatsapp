@@ -139,7 +139,7 @@ export default function TemplatesPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (!res.ok) { toast.error(data.error || 'Delete failed'); return; }
+      if (!res.ok) { toast.error(data.error || 'Delete failed', { duration: 6000 }); return; }
       toast.success('Template deleted');
       load();
     } catch {
@@ -412,16 +412,16 @@ function TemplatePreviewModal({ template: t, onClose }: { template: Template; on
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:rounded-2xl sm:max-w-md shadow-2xl flex flex-col max-h-[92vh] rounded-t-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div>
-            <h2 className="font-bold text-gray-900">{t.name}</h2>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 flex-shrink-0">
+          <div className="min-w-0 mr-3">
+            <h2 className="font-bold text-gray-900 truncate">{t.name}</h2>
             <p className="text-xs text-gray-400 mt-0.5 uppercase tracking-wide">{t.language} · {t.category}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className={`badge border flex items-center gap-1 ${sc.bg} ${sc.color} ${sc.border}`}>
               {sc.icon} {t.status}
             </span>
@@ -431,15 +431,14 @@ function TemplatePreviewModal({ template: t, onClose }: { template: Template; on
           </div>
         </div>
 
-        {/* Phone preview */}
-        <div className="p-6">
+        {/* Phone preview — scrollable */}
+        <div className="overflow-y-auto flex-1 p-4 sm:p-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 text-center">
             WhatsApp Preview
           </p>
 
           {/* WhatsApp background */}
-          <div className="bg-[#ECE5DD] rounded-2xl p-4 min-h-[200px]"
-            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg...")' }}>
+          <div className="bg-[#ECE5DD] rounded-2xl p-4 min-h-[200px]">
 
             {/* Bubble */}
             <div className="bg-white rounded-xl rounded-tl-sm shadow-md max-w-[85%] overflow-hidden">
@@ -526,7 +525,7 @@ function TemplatePreviewModal({ template: t, onClose }: { template: Template; on
         </div>
 
         {/* Footer close */}
-        <div className="px-6 pb-6">
+        <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex-shrink-0">
           <button onClick={onClose} className="btn-secondary w-full">Close Preview</button>
         </div>
       </div>
