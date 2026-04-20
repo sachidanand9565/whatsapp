@@ -24,7 +24,8 @@ function createPool(): mysql.Pool {
     connectionLimit:    5,   // lower limit for serverless (Vercel)
     queueLimit:         0,
     charset:            'utf8mb4',
-    timezone:           'Z', // store as UTC
+    timezone:           'Z',         // session timezone = UTC
+    dateStrings:        true,        // return datetime as strings, not Date objects
   });
 }
 
