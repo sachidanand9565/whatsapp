@@ -104,24 +104,21 @@ export async function POST(req: NextRequest) {
     const autoName     = (firstParam && !firstParam.startsWith('$')) ? firstParam : null;
     const contactName  = explicitName || autoName || null;
 
-    // ── Upsert contact ────────────────────────────────────────
-    const existing = await query<RowDataPacket[]>(
+    // ── Upsert contact (race-condition safe) ─────────────────
+    // INSERT IGNORE skips silently if webhook already created the contact
+    await execute(
+      'INSERT IGNORE INTO contacts (workspace_id, phone, name, source, opted_in) VALUES (?, ?, ?, ?, 1)',
+      [payload.workspaceId, normalizedPhone, contactName, 'api_campaign']
+    );
+    const contactRow = await query<RowDataPacket[]>(
       'SELECT id, name FROM contacts WHERE workspace_id = ? AND phone = ? LIMIT 1',
       [payload.workspaceId, normalizedPhone]
     );
-    let contactId: number;
-    if (existing.length > 0) {
-      contactId = existing[0].id as number;
-      if (contactName && !existing[0].name) {
-        await execute(
-          "UPDATE contacts SET name = ? WHERE id = ? AND (name IS NULL OR name = '')",
-          [contactName, contactId]
-        );
-      }
-    } else {
-      contactId = await insert(
-        'INSERT INTO contacts (workspace_id, phone, name, source, opted_in) VALUES (?, ?, ?, ?, 1)',
-        [payload.workspaceId, normalizedPhone, contactName, 'api_campaign']
+    const contactId = contactRow[0].id as number;
+    if (contactName && !contactRow[0].name) {
+      await execute(
+        "UPDATE contacts SET name = ? WHERE id = ? AND (name IS NULL OR name = '')",
+        [contactName, contactId]
       );
     }
 

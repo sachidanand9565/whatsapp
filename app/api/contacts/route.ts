@@ -21,10 +21,10 @@ export async function GET(req: NextRequest) {
       SELECT c.*,
         (SELECT COUNT(*) FROM messages m
          WHERE m.contact_id = c.id AND m.direction = 'inbound'
-           AND m.created_at > COALESCE(
-             (SELECT MAX(m2.created_at) FROM messages m2
+           AND m.id > COALESCE(
+             (SELECT MAX(m2.id) FROM messages m2
               WHERE m2.contact_id = c.id AND m2.direction = 'outbound'),
-             '1970-01-01'
+             0
            )
         ) AS unread_count,
         (SELECT COUNT(*) FROM messages mi

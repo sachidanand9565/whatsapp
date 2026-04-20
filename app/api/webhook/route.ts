@@ -87,32 +87,29 @@ export async function POST(req: NextRequest) {
     const phone       = normalizePhone(msg.from);
     const profileName = profileNames[msg.from] || profileNames[phone] || null;
 
-    // Upsert contact
-    let contact = await query<RowDataPacket[]>(
+    let contactId: number;
+    // INSERT IGNORE is race-condition safe against concurrent campaign sends
+    await execute(
+      'INSERT IGNORE INTO contacts (workspace_id, phone, name, source, opted_in) VALUES (?, ?, ?, ?, 1)',
+      [workspaceId, phone, profileName || null, 'inbound']
+    );
+    // Re-query to get the actual id (whether just inserted or already existed)
+    const contactRow = await query<RowDataPacket[]>(
       'SELECT id, name FROM contacts WHERE workspace_id = ? AND phone = ? LIMIT 1',
       [workspaceId, phone]
     );
-    let contactId: number;
-    if (contact.length === 0) {
-      contactId = await insert(
-        'INSERT INTO contacts (workspace_id, phone, name, source, opted_in) VALUES (?, ?, ?, ?, 1)',
-        [workspaceId, phone, profileName || null, 'inbound']
-      );
-    } else {
-      contactId = contact[0].id as number;
-      // Update profile name from WhatsApp if available (keep existing manually-set name)
-      if (profileName) {
-        await execute(
-          "UPDATE contacts SET name = ? WHERE id = ? AND (name IS NULL OR name = '')",
-          [profileName, contactId]
-        );
-      }
-      // If resolved contact messages again → reopen to active inbox
+    contactId = contactRow[0].id as number;
+    if (profileName && !contactRow[0].name) {
       await execute(
-        "UPDATE contacts SET chat_status = 'open', intervened_by = NULL WHERE id = ? AND chat_status = 'resolved'",
-        [contactId]
+        "UPDATE contacts SET name = ? WHERE id = ? AND (name IS NULL OR name = '')",
+        [profileName, contactId]
       );
     }
+    // If resolved contact messages again → reopen to active inbox
+    await execute(
+      "UPDATE contacts SET chat_status = 'open', intervened_by = NULL WHERE id = ? AND chat_status = 'resolved'",
+      [contactId]
+    );
 
     // Extract readable content based on message type
     let content = '';
