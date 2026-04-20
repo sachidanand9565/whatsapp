@@ -284,7 +284,7 @@ export default function InboxPage() {
   const [search, setSearch]         = useState('');
   const [sending, setSending]       = useState(false);
   const [actioning, setActioning]   = useState(false);
-  const [tab, setTab]               = useState<'all' | 'unread'>('all');
+  const [tab, setTab]               = useState<'all' | 'replied' | 'unread'>('replied');
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates, setTemplates]   = useState<{ id: number; name: string; language: string; body_text: string; status: string }[]>([]);
   const [sendingTpl, setSendingTpl] = useState<number | null>(null);
@@ -467,20 +467,32 @@ export default function InboxPage() {
 
         {/* Tabs */}
         <div className="flex border-b border-gray-100">
-          {(['all', 'unread'] as const).map((t) => {
-            const unreadCount = contacts.filter((c) => {
+          {(['all', 'replied', 'unread'] as const).map((t) => {
+            const unreadCount  = contacts.filter((c) => {
               if (!Number(c.unread_count)) return false;
               const viewedAt = readAt[c.id];
               if (!viewedAt) return true;
               return c.last_message_at && new Date(c.last_message_at) > new Date(viewedAt);
             }).length;
+            const repliedCount = contacts.filter((c) => Number(c.inbound_count) > 0).length;
+            const label =
+              t === 'all'     ? `All (${contacts.length})` :
+              t === 'replied' ? (
+                <span className="flex items-center gap-1">
+                  Replied
+                  {repliedCount > 0 && <span className="bg-whatsapp-green text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{repliedCount}</span>}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  Unread
+                  {unreadCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{unreadCount}</span>}
+                </span>
+              );
             return (
               <button key={t} onClick={() => setTab(t)}
-                className={`flex-1 py-2 text-xs font-semibold capitalize transition-colors flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 text-xs font-semibold transition-colors flex items-center justify-center gap-1 ${
                   tab === t ? 'border-b-2 border-whatsapp-green text-whatsapp-teal' : 'text-gray-400'}`}>
-                {t === 'all' ? `All (${contacts.length})` : (
-                  <>Unread {unreadCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{unreadCount}</span>}</>
-                )}
+                {label}
               </button>
             );
           })}
@@ -494,6 +506,8 @@ export default function InboxPage() {
           {filtered
             .filter((c) => {
               if (tab === 'all') return true;
+              if (tab === 'replied') return Number(c.inbound_count) > 0;
+              // unread tab
               if (!Number(c.unread_count)) return false;
               const viewedAt = readAt[c.id];
               if (!viewedAt) return true;

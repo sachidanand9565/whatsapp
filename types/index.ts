@@ -42,6 +42,7 @@ export interface Contact {
   updated_at?:     string;
   last_message_at?: string;
   unread_count?:   number;
+  inbound_count?:  number;
 }
 
 export interface Template {

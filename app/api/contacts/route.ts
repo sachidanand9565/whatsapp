@@ -27,6 +27,9 @@ export async function GET(req: NextRequest) {
              '1970-01-01'
            )
         ) AS unread_count,
+        (SELECT COUNT(*) FROM messages mi
+         WHERE mi.contact_id = c.id AND mi.direction = 'inbound'
+        ) AS inbound_count,
         (SELECT MAX(m3.created_at) FROM messages m3 WHERE m3.contact_id = c.id) AS last_message_at
       FROM contacts c WHERE c.workspace_id = ?`;
     let countSql = 'SELECT COUNT(*) as total FROM contacts WHERE workspace_id = ?';
