@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { query, execute, insert } from '@/lib/db';
 import { sendTemplateMessage } from '@/lib/whatsapp';
-import { apiSuccess, apiError, sleep, WA_RATE_LIMIT_MS } from '@/lib/utils';
+import { apiSuccess, apiError, sleep, WA_RATE_LIMIT_MS, utcNow } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
 type Params = { params: { id: string } };
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // Mark as running
-    await execute('UPDATE campaigns SET status = ?, started_at = NOW() WHERE id = ?', ['running', campaignId]);
+    await execute('UPDATE campaigns SET status = ?, started_at = ? WHERE id = ?', ['running', utcNow(), campaignId]);
 
     // Get pending contacts
     const contacts = await query<RowDataPacket[]>(
@@ -110,15 +110,16 @@ async function sendBulk(
       });
 
       // Store message
+      const t = utcNow();
       const msgId = await insert(
-        `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at)
-         VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', NOW())`,
-        [workspaceId, contact.contact_id, wamid, templateContent, campaignId]
+        `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at, created_at)
+         VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', ?, ?)`,
+        [workspaceId, contact.contact_id, wamid, templateContent, campaignId, t, t]
       );
 
       await execute(
-        'UPDATE campaign_contacts SET status = ?, message_id = ?, sent_at = NOW() WHERE id = ?',
-        ['sent', msgId, contact.cc_id]
+        'UPDATE campaign_contacts SET status = ?, message_id = ?, sent_at = ? WHERE id = ?',
+        ['sent', msgId, t, contact.cc_id]
       );
       sentCount++;
     } catch (err) {
@@ -135,9 +136,9 @@ async function sendBulk(
 
   const finalStatus = contacts.length > 0 && failedCount === contacts.length ? 'failed' : 'completed';
   await execute(
-    `UPDATE campaigns SET status = ?, completed_at = NOW(),
+    `UPDATE campaigns SET status = ?, completed_at = ?,
      sent_count = ?, failed_count = ? WHERE id = ?`,
-    [finalStatus, sentCount, failedCount, campaignId]
+    [finalStatus, utcNow(), sentCount, failedCount, campaignId]
   );
 }
 

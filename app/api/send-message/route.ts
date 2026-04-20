@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { query, insert } from '@/lib/db';
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp';
-import { apiSuccess, apiError, normalizePhone } from '@/lib/utils';
+import { apiSuccess, apiError, normalizePhone, utcNow } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
 export async function POST(req: NextRequest) {
@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
 
     // Store in DB
     const msgId = await insert(
-      `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, status, sent_at)
-       VALUES (?, ?, ?, 'outbound', ?, ?, 'sent', NOW())`,
-      [payload.workspaceId, contactId, wamid, msgType, content]
+      `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, status, sent_at, created_at)
+       VALUES (?, ?, ?, 'outbound', ?, ?, 'sent', ?, ?)`,
+      [payload.workspaceId, contactId, wamid, msgType, content, utcNow(), utcNow()]
     );
 
     return apiSuccess({ messageId: msgId, wamid });

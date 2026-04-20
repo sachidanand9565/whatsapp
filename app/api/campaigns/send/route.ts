@@ -18,7 +18,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { query, execute, insert } from '@/lib/db';
-import { apiSuccess, apiError, normalizePhone } from '@/lib/utils';
+import { apiSuccess, apiError, normalizePhone, utcNow } from '@/lib/utils';
 import { sendTemplateMessage } from '@/lib/whatsapp';
 import { RowDataPacket } from 'mysql2';
 
@@ -166,18 +166,19 @@ export async function POST(req: NextRequest) {
     });
 
     // ── Persist message + campaign_contacts ───────────────────
+    const t = utcNow();
     const msgId = await insert(
       `INSERT INTO messages
-         (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at)
-       VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', NOW())`,
-      [payload.workspaceId, contactId, wamid || null, templateContent, campaign.id]
+         (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at, created_at)
+       VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', ?, ?)`,
+      [payload.workspaceId, contactId, wamid || null, templateContent, campaign.id, t, t]
     );
 
     await insert(
       `INSERT INTO campaign_contacts (campaign_id, contact_id, message_id, status, sent_at)
-       VALUES (?, ?, ?, 'sent', NOW())
-       ON DUPLICATE KEY UPDATE message_id = VALUES(message_id), status = 'sent', sent_at = NOW()`,
-      [campaign.id, contactId, msgId]
+       VALUES (?, ?, ?, 'sent', ?)
+       ON DUPLICATE KEY UPDATE message_id = VALUES(message_id), status = 'sent', sent_at = ?`,
+      [campaign.id, contactId, msgId, t, t]
     );
 
     await execute(

@@ -33,6 +33,15 @@ export function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+// ---- UTC datetime helpers (MySQL-safe "YYYY-MM-DD HH:mm:ss" in UTC) ----
+// Never use MySQL's NOW() — it depends on server timezone which may not be UTC.
+export function utcNow(): string {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+export function unixToUtc(unixSeconds: string | number): string {
+  return new Date(Number(unixSeconds) * 1000).toISOString().slice(0, 19).replace('T', ' ');
+}
+
 // ---- Sleep (for rate limiting bulk sends) ----
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

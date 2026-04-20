@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, insert, execute } from '@/lib/db';
 import { parseWebhookBody, sendTextMessage } from '@/lib/whatsapp';
-import { normalizePhone } from '@/lib/utils';
+import { normalizePhone, utcNow, unixToUtc } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 import { emitSSE } from '@/lib/sse';
 
@@ -140,20 +140,22 @@ export async function POST(req: NextRequest) {
     else content = msg.type;
 
     // Store message (try with replied_to_wamid, fallback without)
+    const msgSentAt = unixToUtc(msg.timestamp);
+    const msgNow    = utcNow();
     try {
       await insert(
         `INSERT IGNORE INTO messages
-           (workspace_id, contact_id, wamid, replied_to_wamid, direction, type, content, status, sent_at)
-         VALUES (?, ?, ?, ?, 'inbound', ?, ?, 'delivered', FROM_UNIXTIME(?))`,
-        [workspaceId, contactId, msg.wamid, msg.replied_to_wamid || null, msg.type, content, msg.timestamp]
+           (workspace_id, contact_id, wamid, replied_to_wamid, direction, type, content, status, sent_at, created_at)
+         VALUES (?, ?, ?, ?, 'inbound', ?, ?, 'delivered', ?, ?)`,
+        [workspaceId, contactId, msg.wamid, msg.replied_to_wamid || null, msg.type, content, msgSentAt, msgNow]
       );
     } catch {
       // fallback: insert without replied_to_wamid (column may not exist yet)
       await insert(
         `INSERT IGNORE INTO messages
-           (workspace_id, contact_id, wamid, direction, type, content, status, sent_at)
-         VALUES (?, ?, ?, 'inbound', ?, ?, 'delivered', FROM_UNIXTIME(?))`,
-        [workspaceId, contactId, msg.wamid, msg.type, content, msg.timestamp]
+           (workspace_id, contact_id, wamid, direction, type, content, status, sent_at, created_at)
+         VALUES (?, ?, ?, 'inbound', ?, ?, 'delivered', ?, ?)`,
+        [workspaceId, contactId, msg.wamid, msg.type, content, msgSentAt, msgNow]
       );
     }
 
@@ -187,10 +189,11 @@ export async function POST(req: NextRequest) {
 
   // ---- Process status updates ----
   for (const status of statuses) {
+    const now = utcNow();
     const fieldMap: Record<string, string> = {
-      sent:      "status = 'sent', sent_at = NOW()",
-      delivered: "status = 'delivered', delivered_at = NOW()",
-      read:      "status = 'read', read_at = NOW()",
+      sent:      `status = 'sent', sent_at = '${now}'`,
+      delivered: `status = 'delivered', delivered_at = '${now}'`,
+      read:      `status = 'read', read_at = '${now}'`,
       failed:    "status = 'failed'",
     };
     const update = fieldMap[status.status];
@@ -303,10 +306,11 @@ async function processChatbot(
       );
       const wamid = result?.messages?.[0]?.id;
       if (wamid) {
+        const t = utcNow();
         await insert(
-          `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, status, sent_at)
-           VALUES (?, ?, ?, 'outbound', 'text', ?, 'sent', NOW())`,
-          [workspaceId, contactId, wamid, rule.response_text]
+          `INSERT INTO messages (workspace_id, contact_id, wamid, direction, type, content, status, sent_at, created_at)
+           VALUES (?, ?, ?, 'outbound', 'text', ?, 'sent', ?, ?)`,
+          [workspaceId, contactId, wamid, rule.response_text, t, t]
         );
       }
       break;

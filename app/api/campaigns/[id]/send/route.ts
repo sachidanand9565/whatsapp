@@ -19,7 +19,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { query, execute, insert } from '@/lib/db';
-import { apiSuccess, apiError, normalizePhone } from '@/lib/utils';
+import { apiSuccess, apiError, normalizePhone, utcNow } from '@/lib/utils';
 import { sendTemplateMessage } from '@/lib/whatsapp';
 import { RowDataPacket } from 'mysql2';
 
@@ -176,19 +176,20 @@ export async function POST(
     });
 
     // ── Store message row (enables webhook delivery tracking) ─
+    const t = utcNow();
     const msgId = await insert(
       `INSERT INTO messages
-         (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at)
-       VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', NOW())`,
-      [payload.workspaceId, contactId, wamid || null, templateContent, campaignId]
+         (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at, created_at)
+       VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', ?, ?)`,
+      [payload.workspaceId, contactId, wamid || null, templateContent, campaignId, t, t]
     );
 
     // ── Add campaign_contacts entry (enables contact list + status tracking) ─
     await insert(
       `INSERT INTO campaign_contacts (campaign_id, contact_id, message_id, status, sent_at)
-       VALUES (?, ?, ?, 'sent', NOW())
-       ON DUPLICATE KEY UPDATE message_id = VALUES(message_id), status = 'sent', sent_at = NOW()`,
-      [campaignId, contactId, msgId]
+       VALUES (?, ?, ?, 'sent', ?)
+       ON DUPLICATE KEY UPDATE message_id = VALUES(message_id), status = 'sent', sent_at = ?`,
+      [campaignId, contactId, msgId, t, t]
     );
 
     // ── Update campaign counters ─────────────────────────────
