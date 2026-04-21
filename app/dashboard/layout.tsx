@@ -4,37 +4,59 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard, MessageSquare, Users, Megaphone,
-  FileText, Bot, BarChart3, Settings, LogOut, Menu, X, History, CreditCard
+  FileText, Bot, BarChart3, Settings, LogOut, Menu, X,
+  History, CreditCard, UserCog,
 } from 'lucide-react';
 
-const nav = [
-  { label: 'Dashboard',  href: '/dashboard',   icon: LayoutDashboard },
-  { label: 'Inbox',      href: '/inbox',        icon: MessageSquare },
-  { label: 'History',    href: '/history',      icon: History },
-  { label: 'Contacts',   href: '/contacts',     icon: Users },
-  { label: 'Campaigns',  href: '/campaigns',    icon: Megaphone },
-  { label: 'Templates',  href: '/templates',    icon: FileText },
-  { label: 'Chatbot',    href: '/chatbot',      icon: Bot },
-  { label: 'Analytics',  href: '/analytics',    icon: BarChart3 },
-  { label: 'Billing',    href: '/billing',      icon: CreditCard },
-  { label: 'Settings',   href: '/settings',     icon: Settings },
+type Role = 'admin' | 'manager' | 'agent';
+
+const ALL_NAV = [
+  { label: 'Dashboard',  href: '/dashboard',   icon: LayoutDashboard, roles: ['admin','manager','agent'] },
+  { label: 'Inbox',      href: '/inbox',        icon: MessageSquare,   roles: ['admin','manager','agent'] },
+  { label: 'History',    href: '/history',      icon: History,         roles: ['admin','manager','agent'] },
+  { label: 'Contacts',   href: '/contacts',     icon: Users,           roles: ['admin','manager','agent'] },
+  { label: 'Campaigns',  href: '/campaigns',    icon: Megaphone,       roles: ['admin','manager','agent'] },
+  { label: 'Templates',  href: '/templates',    icon: FileText,        roles: ['admin','manager'] },
+  { label: 'Chatbot',    href: '/chatbot',      icon: Bot,             roles: ['admin'] },
+  { label: 'Analytics',  href: '/analytics',    icon: BarChart3,       roles: ['admin','manager'] },
+  { label: 'Agents',     href: '/agents',       icon: UserCog,         roles: ['admin'] },
+  { label: 'Billing',    href: '/billing',      icon: CreditCard,      roles: ['admin'] },
+  { label: 'Settings',   href: '/settings',     icon: Settings,        roles: ['admin'] },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]     = useState(false);
+  const [role, setRole]     = useState<Role>('admin');
+  const [userName, setUserName] = useState('');
 
   useEffect(() => {
-    if (!localStorage.getItem('token')) router.replace('/login');
+    if (!localStorage.getItem('token')) {
+      router.replace('/login');
+      return;
+    }
+    const r = (localStorage.getItem('userRole') || 'admin') as Role;
+    setRole(r);
+    setUserName(localStorage.getItem('userName') || '');
   }, [router]);
+
+  const nav = ALL_NAV.filter((item) => item.roles.includes(role));
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     localStorage.removeItem('token');
     localStorage.removeItem('workspaceId');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userName');
     router.push('/login');
   }
+
+  const roleBadgeColor: Record<Role, string> = {
+    admin:   'bg-purple-500',
+    manager: 'bg-blue-500',
+    agent:   'bg-green-500',
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -93,9 +115,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button className="lg:hidden text-gray-600 hover:text-gray-900" onClick={() => setOpen(true)}>
             <Menu size={22} />
           </button>
-          <h2 className="font-semibold text-gray-800 capitalize">
+          <h2 className="font-semibold text-gray-800 capitalize flex-1">
             {nav.find((n) => pathname.startsWith(n.href))?.label || 'Dashboard'}
           </h2>
+          {userName && (
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] font-semibold text-white px-2 py-0.5 rounded-full capitalize ${roleBadgeColor[role]}`}>
+                {role}
+              </span>
+              <span className="text-sm text-gray-600 hidden sm:block">{userName}</span>
+            </div>
+          )}
         </header>
 
         {/* Page content */}

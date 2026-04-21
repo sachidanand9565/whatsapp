@@ -11,6 +11,21 @@ import { RowDataPacket } from 'mysql2';
 export async function GET(req: NextRequest) {
   try {
     const payload = requireAuth(req);
+
+    // Agents only see campaigns assigned to them
+    if (payload.role === 'agent') {
+      const campaigns = await query<RowDataPacket[]>(
+        `SELECT c.*, t.name as template_name
+         FROM campaigns c
+         LEFT JOIN templates t ON t.id = c.template_id
+         JOIN campaign_assignments ca ON ca.campaign_id = c.id AND ca.agent_id = ?
+         WHERE c.workspace_id = ?
+         ORDER BY c.created_at DESC`,
+        [payload.userId, payload.workspaceId]
+      );
+      return apiSuccess(campaigns);
+    }
+
     const campaigns = await query<RowDataPacket[]>(
       `SELECT c.*, t.name as template_name
        FROM campaigns c
@@ -29,6 +44,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const payload = requireAuth(req);
+    if (payload.role === 'agent') return apiError('Agents cannot create campaigns', 403);
+
     const { name, template_id, scheduled_at, template_vars, contact_ids, campaign_type } = await req.json();
 
     if (!name || !template_id) return apiError('Name and template are required');

@@ -17,6 +17,22 @@ export async function GET(req: NextRequest) {
     const status     = sp.get('status') || '';
     const chatStatus = sp.get('chatStatus') || '';
 
+    // Agents see only contacts from their assigned campaigns
+    const agentFilterMain  = payload.role === 'agent'
+      ? `AND c.id IN (
+           SELECT cc.contact_id FROM campaign_contacts cc
+           JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+           WHERE ca.agent_id = ${payload.userId}
+         )`
+      : '';
+    const agentFilterCount = payload.role === 'agent'
+      ? `AND id IN (
+           SELECT cc.contact_id FROM campaign_contacts cc
+           JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+           WHERE ca.agent_id = ${payload.userId}
+         )`
+      : '';
+
     let sql    = `
       SELECT c.*,
         (SELECT COUNT(*) FROM messages m
@@ -31,8 +47,8 @@ export async function GET(req: NextRequest) {
          WHERE mi.contact_id = c.id AND mi.direction = 'inbound'
         ) AS inbound_count,
         (SELECT MAX(m3.created_at) FROM messages m3 WHERE m3.contact_id = c.id) AS last_message_at
-      FROM contacts c WHERE c.workspace_id = ?`;
-    let countSql = 'SELECT COUNT(*) as total FROM contacts WHERE workspace_id = ?';
+      FROM contacts c WHERE c.workspace_id = ? ${agentFilterMain}`;
+    let countSql = `SELECT COUNT(*) as total FROM contacts WHERE workspace_id = ? ${agentFilterCount}`;
     const params: unknown[] = [payload.workspaceId];
 
     if (search) {

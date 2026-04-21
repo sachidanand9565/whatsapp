@@ -5,7 +5,7 @@
  */
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { query, execute } from '@/lib/db';
+import { query, execute, insert } from '@/lib/db';
 import { apiSuccess, apiError } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
@@ -34,11 +34,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     // Chat status transition (intervene / resolve / reopen)
     if (chat_status !== undefined) {
+      // Fetch actor's name for system message
+      const userRows = await query<RowDataPacket[]>(
+        'SELECT name FROM users WHERE id = ? LIMIT 1',
+        [payload.userId]
+      );
+      const actorName = userRows[0]?.name || payload.email;
+
       const sets: string[] = ['chat_status = ?'];
       const vals: unknown[] = [chat_status];
       if (chat_status === 'intervened') {
         sets.push('intervened_by = ?');
-        vals.push(payload.email);
+        vals.push(actorName);
       } else if (chat_status === 'open') {
         sets.push('intervened_by = NULL');
       }
@@ -46,6 +53,24 @@ export async function PUT(req: NextRequest, { params }: Params) {
       await execute(
         `UPDATE contacts SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`, vals
       );
+
+      // Insert system message so it appears in chat
+      let systemText = '';
+      if (chat_status === 'intervened') {
+        systemText = `Intervened by ${actorName}`;
+      } else if (chat_status === 'resolved') {
+        systemText = `Closed by ${actorName}`;
+      } else if (chat_status === 'open') {
+        systemText = `Reopened by ${actorName}`;
+      }
+      if (systemText) {
+        await insert(
+          `INSERT INTO messages (workspace_id, contact_id, direction, type, content, status, sent_at)
+           VALUES (?, ?, 'outbound', 'system', ?, 'delivered', NOW())`,
+          [payload.workspaceId, params.id, systemText]
+        );
+      }
+
       return apiSuccess({ updated: true });
     }
 

@@ -25,8 +25,8 @@ export default function LoginPage() {
       
       localStorage.setItem('token', data.data.token);
       localStorage.setItem('workspaceId', String(data.data.workspaceId));
-    console.log(String(data.data.workspaceId));
-    
+      localStorage.setItem('userRole', data.data.user.role);
+      localStorage.setItem('userName', data.data.user.name);
       window.location.href = '/dashboard';
     } finally {
       setLoading(false);

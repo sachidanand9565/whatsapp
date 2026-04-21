@@ -606,6 +606,28 @@ export default function InboxPage() {
                                : msgDateIST.toDateString() === yesterdayIST.toDateString() ? 'Yesterday'
                                : msgDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
 
+              // System message — centered badge
+              const isSystemMsg = m.type === 'system' ||
+                (m.content?.startsWith('Intervened by ') || m.content?.startsWith('Closed by ') || m.content?.startsWith('Reopened by '));
+              if (isSystemMsg) {
+                return (
+                  <div key={m.id}>
+                    {isNewDay && (
+                      <div className="flex items-center justify-center my-3">
+                        <span className="bg-white/80 text-gray-500 text-xs font-medium px-3 py-1 rounded-full shadow-sm">
+                          {dateLabel}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-center my-2">
+                      <span className="bg-gray-200/80 text-gray-500 text-xs px-4 py-1.5 rounded-full shadow-sm">
+                        {m.content}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div key={m.id}>
                   {isNewDay && (

@@ -183,6 +183,20 @@ export default function HistoryPage() {
             {messages.map((m) => {
               const tpl     = parseTemplateContent(m.content);
               const timeStr = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+              // System message — centered badge (intervene/resolve/reopen events)
+              const isSystemMsg = m.type === 'system' ||
+                (m.content?.startsWith('Intervened by ') || m.content?.startsWith('Closed by ') || m.content?.startsWith('Reopened by '));
+              if (isSystemMsg) {
+                return (
+                  <div key={m.id} className="flex items-center justify-center my-1">
+                    <span className="bg-gray-200/80 text-gray-500 text-xs px-4 py-1.5 rounded-full shadow-sm">
+                      {m.content}
+                    </span>
+                  </div>
+                );
+              }
+
               return (
                 <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                   {tpl ? (

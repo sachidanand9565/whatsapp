@@ -12,8 +12,30 @@ export async function GET(req: NextRequest) {
   try {
     const payload = requireAuth(req);
     const wid = payload.workspaceId;
+    const isAgent = payload.role === 'agent';
+    const uid = payload.userId;
 
-    // Run all queries in parallel for performance
+    // Agent: scope to contacts in their assigned campaigns only
+    const contactFilter = isAgent
+      ? `AND contact_id IN (
+           SELECT cc.contact_id FROM campaign_contacts cc
+           JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+           WHERE ca.agent_id = ${uid}
+         )`
+      : '';
+
+    const campaignFilter = isAgent
+      ? `AND id IN (SELECT campaign_id FROM campaign_assignments WHERE agent_id = ${uid})`
+      : '';
+
+    const contactTableFilter = isAgent
+      ? `AND id IN (
+           SELECT cc.contact_id FROM campaign_contacts cc
+           JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+           WHERE ca.agent_id = ${uid}
+         )`
+      : '';
+
     const [
       msgStats,
       contactStats,
@@ -29,7 +51,7 @@ export async function GET(req: NextRequest) {
            SUM(status = 'delivered') as delivered,
            SUM(status = 'read') as read_count,
            SUM(status = 'failed') as failed
-         FROM messages WHERE workspace_id = ?`,
+         FROM messages WHERE workspace_id = ? ${contactFilter}`,
         [wid]
       ),
       // Contact stats
@@ -39,7 +61,7 @@ export async function GET(req: NextRequest) {
            SUM(created_at >= CURDATE()) as today,
            SUM(status = 'converted') as converted,
            SUM(opted_in = 1) as opted_in
-         FROM contacts WHERE workspace_id = ?`,
+         FROM contacts WHERE workspace_id = ? ${contactTableFilter}`,
         [wid]
       ),
       // Campaign stats
@@ -49,7 +71,7 @@ export async function GET(req: NextRequest) {
            SUM(status = 'running') as active,
            SUM(status = 'completed') as completed,
            SUM(sent_count) as total_sent
-         FROM campaigns WHERE workspace_id = ?`,
+         FROM campaigns WHERE workspace_id = ? ${campaignFilter}`,
         [wid]
       ),
       // Daily messages last 7 days
@@ -60,6 +82,7 @@ export async function GET(req: NextRequest) {
            SUM(direction = 'inbound') as received
          FROM messages
          WHERE workspace_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+           ${contactFilter}
          GROUP BY DATE(created_at)
          ORDER BY date ASC`,
         [wid]
@@ -70,7 +93,9 @@ export async function GET(req: NextRequest) {
            DATE(updated_at) as date,
            COUNT(*) as conversions
          FROM contacts
-         WHERE workspace_id = ? AND status = 'converted' AND updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+         WHERE workspace_id = ? AND status = 'converted'
+           AND updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+           ${contactTableFilter}
          GROUP BY DATE(updated_at)
          ORDER BY date ASC`,
         [wid]

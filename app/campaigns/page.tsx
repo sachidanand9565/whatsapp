@@ -2,9 +2,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/hooks/useApi';
-import { Plus, Play, Radio, Zap, GitBranch, ShoppingBag, ChevronRight, Trash2 } from 'lucide-react';
+import { Plus, Play, Radio, Zap, GitBranch, ShoppingBag, ChevronRight, Trash2, UserPlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Campaign, Template, Contact } from '@/types';
+import { Campaign, Template, Contact, User } from '@/types';
 
 const STATUS_COLORS: Record<string, string> = {
   draft:      'bg-gray-100 text-gray-600',
@@ -25,12 +25,18 @@ const ALL_TYPES = ['all', 'broadcast', 'api', 'drip', 'transactional'] as const;
 type FilterType = typeof ALL_TYPES[number];
 
 export default function CampaignsPage() {
-  const router                        = useRouter();
-  const [campaigns, setCampaigns]     = useState<Campaign[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [showModal, setShowModal]     = useState(false);
-  const [filterType, setFilterType]   = useState<FilterType>('all');
-  const [deletingId, setDeletingId]   = useState<number | null>(null);
+  const router                              = useRouter();
+  const [campaigns, setCampaigns]           = useState<Campaign[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [showModal, setShowModal]           = useState(false);
+  const [filterType, setFilterType]         = useState<FilterType>('all');
+  const [deletingId, setDeletingId]         = useState<number | null>(null);
+  const [assignCampaign, setAssignCampaign] = useState<Campaign | null>(null);
+  const [userRole, setUserRole]             = useState('admin');
+
+  useEffect(() => {
+    setUserRole(localStorage.getItem('userRole') || 'admin');
+  }, []);
 
   function load() {
     setLoading(true);
@@ -92,9 +98,11 @@ export default function CampaignsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 text-sm">
-          <Plus size={16} /> New Campaign
-        </button>
+        {userRole !== 'agent' && (
+          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 text-sm">
+            <Plus size={16} /> New Campaign
+          </button>
+        )}
       </div>
 
       {/* Type filter tabs */}
@@ -191,15 +199,26 @@ export default function CampaignsPage() {
                         <Play size={14} /> Launch
                       </button>
                     )}
-                    <button
-                      onClick={() => deleteCampaign(c.id, c.name)}
-                      disabled={deletingId === c.id || c.status === 'running'}
-                      title={c.status === 'running' ? 'Running campaign delete nahi ho sakta' : 'Delete campaign'}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                      {deletingId === c.id
-                        ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
-                        : <Trash2 size={15} />}
-                    </button>
+                    {/* Assign Agent — admin/manager only */}
+                    {['admin','manager'].includes(userRole) && (
+                      <button
+                        onClick={() => setAssignCampaign(c)}
+                        title="Assign to agent"
+                        className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                        <UserPlus size={15} />
+                      </button>
+                    )}
+                    {userRole !== 'agent' && (
+                      <button
+                        onClick={() => deleteCampaign(c.id, c.name)}
+                        disabled={deletingId === c.id || c.status === 'running'}
+                        title={c.status === 'running' ? 'Running campaign delete nahi ho sakta' : 'Delete campaign'}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                        {deletingId === c.id
+                          ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                          : <Trash2 size={15} />}
+                      </button>
+                    )}
                     <ChevronRight size={16} className="text-gray-300" />
                   </div>
                 </div>
@@ -227,6 +246,116 @@ export default function CampaignsPage() {
       {showModal && (
         <CampaignModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); }} />
       )}
+
+      {assignCampaign && (
+        <AssignAgentModal
+          campaign={assignCampaign}
+          onClose={() => setAssignCampaign(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---- Assign Agent Modal ----
+function AssignAgentModal({ campaign, onClose }: { campaign: Campaign; onClose: () => void }) {
+  const [agents, setAgents]         = useState<User[]>([]);
+  const [assigned, setAssigned]     = useState<number[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [saving, setSaving]         = useState<number | null>(null);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+
+  useEffect(() => {
+    const headers = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch('/api/agents', { headers }).then((r) => r.json()),
+      fetch(`/api/campaigns/${campaign.id}/assign`, { headers }).then((r) => r.json()),
+    ]).then(([agentsRes, assignedRes]) => {
+      setAgents(agentsRes.data || []);
+      setAssigned((assignedRes.data || []).map((a: { id: number }) => a.id));
+      setLoading(false);
+    });
+  }, [campaign.id, token]);
+
+  async function toggle(agentId: number, isAssigned: boolean) {
+    setSaving(agentId);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/assign`, {
+        method: isAssigned ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ agent_id: agentId }),
+      });
+      if (res.ok) {
+        setAssigned((prev) =>
+          isAssigned ? prev.filter((id) => id !== agentId) : [...prev, agentId]
+        );
+        toast.success(isAssigned ? 'Agent removed' : 'Campaign assigned!');
+      }
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-gray-900">Assign Agents</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{campaign.name}</p>
+          </div>
+          <button onClick={onClose}><X size={18} className="text-gray-400 hover:text-gray-600" /></button>
+        </div>
+
+        <div className="p-4">
+          {loading ? (
+            <p className="text-center text-gray-400 py-8 text-sm">Loading agents…</p>
+          ) : agents.length === 0 ? (
+            <p className="text-center text-gray-400 py-8 text-sm">
+              No agents found. Create agents from the Agents page first.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {agents.map((agent) => {
+                const isAssigned = assigned.includes(agent.id);
+                const isSaving   = saving === agent.id;
+                return (
+                  <div key={agent.id}
+                    className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors ${
+                      isAssigned ? 'border-whatsapp-green bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                    <div className="w-9 h-9 rounded-full bg-whatsapp-teal text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                      {agent.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{agent.name}</p>
+                      <p className="text-xs text-gray-400 truncate">{agent.email}</p>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                      agent.role === 'manager' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                    }`}>{agent.role}</span>
+                    <button
+                      onClick={() => toggle(agent.id, isAssigned)}
+                      disabled={isSaving}
+                      className={`ml-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        isAssigned
+                          ? 'bg-red-50 text-red-500 hover:bg-red-100'
+                          : 'bg-whatsapp-green text-white hover:bg-green-600'
+                      } disabled:opacity-50`}
+                    >
+                      {isSaving ? '…' : isAssigned ? 'Remove' : 'Assign'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 pb-4">
+          <button onClick={onClose} className="w-full btn-secondary text-sm">Done</button>
+        </div>
+      </div>
     </div>
   );
 }

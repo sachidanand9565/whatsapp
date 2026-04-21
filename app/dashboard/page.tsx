@@ -19,8 +19,10 @@ export default function DashboardPage() {
   const [summary, setSummary]       = useState<Summary | null>(null);
   const [chartData, setChartData]   = useState<{ date: string; sent: number; received: number }[]>([]);
   const [loading, setLoading]       = useState(true);
+  const [userRole, setUserRole]     = useState('');
 
   useEffect(() => {
+    setUserRole(localStorage.getItem('userRole') || '');
     apiFetch('/api/analytics').then((res) => {
       if (res?.data) {
         setSummary(res.data.summary);
@@ -47,6 +49,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+
+      {/* Agent notice — shown when no campaigns assigned */}
+      {userRole === 'agent' && summary?.total_contacts === 0 && summary?.active_campaigns === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-700">
+          Aapko abhi koi campaign assign nahi ki gayi hai. Admin se campaign assign karwayein.
+        </div>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
