@@ -389,14 +389,31 @@ export default function InboxPage() {
   async function sendMessage() {
     if (!text.trim() || !selected) return;
     setSending(true);
+    const msgText = text;
+    setText('');
+
+    // Optimistic update — show message immediately
+    const optimistic = {
+      id: Date.now(), workspace_id: selected.id, contact_id: selected.id,
+      wamid: '', direction: 'outbound' as const, type: 'text',
+      content: msgText, template_id: 0, campaign_id: 0,
+      status: 'queued' as const, error_message: '',
+      sent_at: new Date().toISOString(), delivered_at: '', read_at: '',
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
     try {
       await apiFetch('/api/send-message', {
         method: 'POST',
-        body: JSON.stringify({ contactId: selected.id, type: 'text', text }),
+        body: JSON.stringify({ contactId: selected.id, type: 'text', text: msgText }),
       });
-      setText('');
+      // Reload to get real wamid and status from server
       loadMessages(selected.id);
     } catch (err) {
+      // Remove optimistic on failure
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setText(msgText);
       toast.error('Failed: ' + (err instanceof Error ? err.message : 'error'));
     } finally {
       setSending(false);
@@ -424,6 +441,7 @@ export default function InboxPage() {
   async function intervene() {
     if (!selected || actioning) return;
     setActioning(true);
+    const userName = localStorage.getItem('userName') || 'Agent';
     try {
       await apiFetch(`/api/contacts/${selected.id}`, {
         method: 'PUT',
@@ -432,6 +450,8 @@ export default function InboxPage() {
       const updated = { ...selected, chat_status: 'intervened' as const };
       setSelected(updated);
       setContacts((prev) => prev.map((c) => c.id === selected.id ? updated : c));
+      // Reload messages so "Intervened by" badge appears at correct position
+      loadMessages(selected.id);
     } catch { toast.error('Failed to intervene'); }
     finally { setActioning(false); }
   }
@@ -439,11 +459,26 @@ export default function InboxPage() {
   async function resolve() {
     if (!selected || actioning) return;
     setActioning(true);
+    const userName = localStorage.getItem('userName') || 'Agent';
     try {
+      // Optimistically add "Closed by" at the BOTTOM before clearing
+      const closedMsg = {
+        id: Date.now(), workspace_id: selected.id, contact_id: selected.id,
+        wamid: '', direction: 'outbound' as const, type: 'system',
+        content: `Closed by ${userName}`, template_id: 0, campaign_id: 0,
+        status: 'delivered' as const, error_message: '',
+        sent_at: new Date().toISOString(), delivered_at: '', read_at: '',
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, closedMsg]);
+
       await apiFetch(`/api/contacts/${selected.id}`, {
         method: 'PUT',
         body: JSON.stringify({ chat_status: 'resolved' }),
       });
+
+      // Small delay so user sees "Closed by" at bottom, then moves to history
+      await new Promise((r) => setTimeout(r, 800));
       setContacts((prev) => prev.filter((c) => c.id !== selected.id));
       setSelected(null);
       setMessages([]);
