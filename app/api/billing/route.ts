@@ -38,13 +38,14 @@ export async function GET(req: NextRequest) {
     let label: string;
 
     if (startDate && endDate) {
-      start = Math.floor(new Date(startDate + 'T00:00:00').getTime() / 1000);
-      end   = Math.floor(new Date(endDate   + 'T23:59:59').getTime() / 1000);
+      // Use UTC midnight so the date range is correct regardless of server timezone
+      start = Math.floor(new Date(startDate + 'T00:00:00Z').getTime() / 1000);
+      end   = Math.floor(new Date(endDate   + 'T23:59:59Z').getTime() / 1000);
       label = startDate === endDate ? startDate : `${startDate} to ${endDate}`;
     } else {
       const [year, month] = monthParam.split('-').map(Number);
-      start = Math.floor(new Date(year, month - 1, 1).getTime() / 1000);
-      end   = Math.floor(new Date(year, month, 0, 23, 59, 59).getTime() / 1000);
+      start = Math.floor(Date.UTC(year, month - 1, 1) / 1000);
+      end   = Math.floor(Date.UTC(year, month, 0, 23, 59, 59) / 1000);
       label = monthParam;
     }
 
@@ -63,29 +64,45 @@ export async function GET(req: NextRequest) {
       phone_number_id: string | null;
     };
 
-    const token = encodeURIComponent(access_token);
-
     // 1. Conversation analytics (billing data — 24-72h delay)
-    const convUrl =
-      `https://graph.facebook.com/${GV}/${waba_id}/conversation_analytics` +
-      `?start=${start}&end=${end}&granularity=DAILY` +
-      `&dimensions=["CONVERSATION_CATEGORY"]` +
-      (phone_number_id ? `&phone_numbers=["${phone_number_id}"]` : '') +
-      `&access_token=${token}`;
+    // Use URLSearchParams so brackets/quotes in dimensions & phone_numbers are properly encoded
+    const convParams = new URLSearchParams({
+      start:       String(start),
+      end:         String(end),
+      granularity: 'DAILY',
+      dimensions:  JSON.stringify(['CONVERSATION_CATEGORY']),
+      access_token,
+    });
+    if (phone_number_id) {
+      convParams.set('phone_numbers', JSON.stringify([phone_number_id]));
+    }
+    const convUrl = `https://graph.facebook.com/${GV}/${waba_id}/conversation_analytics?${convParams}`;
 
     // 2. Message analytics (real-time sent/delivered/read)
     const msgUrl = phone_number_id
-      ? `https://graph.facebook.com/${GV}/${phone_number_id}/analytics` +
-        `?start=${start}&end=${end}&granularity=DAY&access_token=${token}`
+      ? `https://graph.facebook.com/${GV}/${phone_number_id}/analytics?${new URLSearchParams({
+          start:       String(start),
+          end:         String(end),
+          granularity: 'DAY',
+          access_token,
+        })}`
       : null;
 
     const [convRes, msgRes] = await Promise.all([
-      fetch(convUrl).then(r => r.json()).catch(() => ({ data: [] })),
-      msgUrl ? fetch(msgUrl).then(r => r.json()).catch(() => null) : Promise.resolve(null),
+      fetch(convUrl).then(r => r.json()).catch((e) => { console.error('[billing] conv fetch error:', e); return { data: [] }; }),
+      msgUrl ? fetch(msgUrl).then(r => r.json()).catch((e) => { console.error('[billing] msg fetch error:', e); return null; }) : Promise.resolve(null),
     ]);
 
-    console.log('[billing] conv:', JSON.stringify(convRes).slice(0, 200));
-    console.log('[billing] msg:', JSON.stringify(msgRes).slice(0, 200));
+    console.log('[billing] conv response:', JSON.stringify(convRes).slice(0, 400));
+    console.log('[billing] msg  response:', JSON.stringify(msgRes).slice(0, 400));
+
+    // Surface Meta API errors to the client so they're visible
+    if (convRes?.error) {
+      console.error('[billing] Meta conv error:', convRes.error);
+    }
+    if (msgRes?.error) {
+      console.error('[billing] Meta msg error:', msgRes.error);
+    }
 
     // ── Parse conversation analytics ──────────────────────────────────────
     const byDay: Record<string, {
