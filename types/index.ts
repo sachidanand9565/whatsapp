@@ -37,8 +37,9 @@ export interface Contact {
   tags:        string[];
   notes:       string;
   opted_in:        number;
-  chat_status?:    'open' | 'intervened' | 'resolved';
-  intervened_by?:  string;
+  chat_status?:       'open' | 'intervened' | 'resolved';
+  intervened_by?:     string;
+  assigned_agent_id?: number | null;
   created_at:      string;
   updated_at?:     string;
   last_message_at?: string;

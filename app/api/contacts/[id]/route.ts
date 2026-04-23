@@ -30,7 +30,31 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const payload = requireAuth(req);
     const body = await req.json();
-    const { name, email, city, source, status, tags, notes, opted_in, chat_status } = body;
+    const { name, email, city, source, status, tags, notes, opted_in, chat_status, transfer_to_id } = body;
+
+    // Chat transfer — reassign contact to a specific agent
+    if (transfer_to_id !== undefined) {
+      // Look up target agent name (for system message)
+      const [actorRows, targetRows] = await Promise.all([
+        query<RowDataPacket[]>('SELECT name FROM users WHERE id = ? LIMIT 1', [payload.userId]),
+        query<RowDataPacket[]>('SELECT name FROM users WHERE id = ? LIMIT 1', [transfer_to_id]),
+      ]);
+      const actorName  = actorRows[0]?.name  || payload.email;
+      const targetName = targetRows[0]?.name || 'Unknown';
+
+      // intervened_by stores WHO transferred (actor), so profile panel shows "Transferred By: [actor]"
+      await execute(
+        'UPDATE contacts SET assigned_agent_id = ?, intervened_by = ? WHERE id = ? AND workspace_id = ?',
+        [transfer_to_id, actorName, params.id, payload.workspaceId]
+      );
+      const t = utcNow();
+      await insert(
+        `INSERT INTO messages (workspace_id, contact_id, direction, type, content, status, sent_at, created_at)
+         VALUES (?, ?, 'outbound', 'system', ?, 'delivered', ?, ?)`,
+        [payload.workspaceId, params.id, `Transferred to ${targetName}`, t, t]
+      );
+      return apiSuccess({ updated: true });
+    }
 
     // Chat status transition (intervene / resolve / reopen)
     if (chat_status !== undefined) {
@@ -46,8 +70,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (chat_status === 'intervened') {
         sets.push('intervened_by = ?');
         vals.push(actorName);
-      } else if (chat_status === 'open') {
-        sets.push('intervened_by = NULL');
+      } else if (chat_status === 'resolved' || chat_status === 'open') {
+        // Clear agent assignment so next inbound is visible to all (admin + campaigns)
+        sets.push('intervened_by = NULL', 'assigned_agent_id = NULL');
       }
       vals.push(params.id, payload.workspaceId);
       await execute(

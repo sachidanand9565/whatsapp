@@ -86,8 +86,9 @@ CREATE TABLE contacts (
   tags         JSON,                           -- ["vip","hot-lead"]
   notes        TEXT,
   opted_in      TINYINT(1) DEFAULT 0,          -- WhatsApp opt-in flag
-  chat_status   ENUM('open','intervened','resolved') DEFAULT 'open',
-  intervened_by VARCHAR(150) NULL,
+  chat_status        ENUM('open','intervened','resolved') DEFAULT 'open',
+  intervened_by      VARCHAR(150) NULL,
+  assigned_agent_id  INT NULL,
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_workspace_phone (workspace_id, phone),

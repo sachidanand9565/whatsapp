@@ -17,19 +17,33 @@ export async function GET(req: NextRequest) {
     const status     = sp.get('status') || '';
     const chatStatus = sp.get('chatStatus') || '';
 
-    // Agents see only contacts from their assigned campaigns
+    // Agents see:
+    //  1. Contacts directly assigned to them (via transfer)
+    //  2. Contacts from their campaigns that haven't been transferred to someone else
     const agentFilterMain  = payload.role === 'agent'
-      ? `AND c.id IN (
-           SELECT cc.contact_id FROM campaign_contacts cc
-           JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
-           WHERE ca.agent_id = ${payload.userId}
+      ? `AND (
+           c.assigned_agent_id = ${payload.userId}
+           OR (
+             c.assigned_agent_id IS NULL
+             AND c.id IN (
+               SELECT cc.contact_id FROM campaign_contacts cc
+               JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+               WHERE ca.agent_id = ${payload.userId}
+             )
+           )
          )`
       : '';
     const agentFilterCount = payload.role === 'agent'
-      ? `AND id IN (
-           SELECT cc.contact_id FROM campaign_contacts cc
-           JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
-           WHERE ca.agent_id = ${payload.userId}
+      ? `AND (
+           assigned_agent_id = ${payload.userId}
+           OR (
+             assigned_agent_id IS NULL
+             AND id IN (
+               SELECT cc.contact_id FROM campaign_contacts cc
+               JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+               WHERE ca.agent_id = ${payload.userId}
+             )
+           )
          )`
       : '';
 

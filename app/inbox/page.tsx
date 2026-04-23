@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { apiFetch } from '@/hooks/useApi';
-import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock } from 'lucide-react';
+import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock, ArrowRightLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Contact, Message } from '@/types';
 
@@ -209,7 +209,10 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount }: { contact:
     { label: 'Status',            value: <span className={`font-semibold ${contact.status === 'converted' ? 'text-green-600' : 'text-gray-700'}`}>{contact.status || 'Active'}</span> },
     { label: 'Chat Status',       value: chatStatusBadge },
     ...(contact.chat_status === 'intervened' && contact.intervened_by
-      ? [{ label: 'Intervened By', value: <span className="font-semibold text-orange-600">{contact.intervened_by}</span> }]
+      ? [{
+          label: contact.assigned_agent_id ? 'Transferred By' : 'Intervened By',
+          value: <span className={`font-semibold ${contact.assigned_agent_id ? 'text-blue-600' : 'text-orange-600'}`}>{contact.intervened_by}</span>,
+        }]
       : []),
     { label: 'Last Active',       value: contact.updated_at ? toLocalDate(contact.updated_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—' },
     { label: 'Template Messages', value: templateMsgCount },
@@ -296,8 +299,13 @@ export default function InboxPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates, setTemplates]   = useState<{ id: number; name: string; language: string; body_text: string; status: string }[]>([]);
   const [sendingTpl, setSendingTpl] = useState<number | null>(null);
-  const bottomRef                   = useRef<HTMLDivElement>(null);
-  const chatRef                     = useRef<HTMLDivElement>(null);
+  const [showTransfer, setShowTransfer]     = useState(false);
+  const [transferAgents, setTransferAgents] = useState<{ id: number; name: string; workspace_role: string }[]>([]);
+  const [loadingAgents, setLoadingAgents]   = useState(false);
+  const [transferring, setTransferring]     = useState(false);
+  const transferRef                         = useRef<HTMLDivElement>(null);
+  const bottomRef                           = useRef<HTMLDivElement>(null);
+  const chatRef                             = useRef<HTMLDivElement>(null);
 
   // SSE-driven unread counts — persisted in localStorage, cleared on select
   const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>(() => {
@@ -500,6 +508,48 @@ export default function InboxPage() {
     finally { setActioning(false); }
   }
 
+  // Close transfer dropdown when clicking outside
+  useEffect(() => {
+    if (!showTransfer) return;
+    function handleOutside(e: MouseEvent) {
+      if (transferRef.current && !transferRef.current.contains(e.target as Node)) {
+        setShowTransfer(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showTransfer]);
+
+  async function openTransfer() {
+    if (transferAgents.length === 0 && !showTransfer) {
+      setLoadingAgents(true);
+      try {
+        const r = await apiFetch('/api/agents');
+        setTransferAgents(r.data || []);
+      } catch { toast.error('Failed to load agents'); }
+      finally { setLoadingAgents(false); }
+    }
+    setShowTransfer((v) => !v);
+  }
+
+  async function transferChat(agent: { id: number; name: string }) {
+    if (!selected || transferring) return;
+    setTransferring(true);
+    setShowTransfer(false);
+    try {
+      await apiFetch(`/api/contacts/${selected.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ transfer_to_id: agent.id }),
+      });
+      // Remove from current agent's view immediately
+      setContacts((prev) => prev.filter((c) => c.id !== selected.id));
+      setSelected(null);
+      setMessages([]);
+      toast.success(`Chat transferred to ${agent.name}`);
+    } catch { toast.error('Failed to transfer'); }
+    finally { setTransferring(false); }
+  }
+
   function scrollToReplied(wamid: string) {
     const el = document.getElementById(`msg-${wamid}`);
     if (el) {
@@ -625,11 +675,50 @@ export default function InboxPage() {
               <p className="text-xs text-gray-400">+{selected.phone}</p>
             </div>
             {selected.chat_status === 'intervened' && (
-              <button onClick={resolve} disabled={actioning}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
-                {actioning ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
-                Resolve
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Transfer dropdown */}
+                <div className="relative" ref={transferRef}>
+                  <button onClick={openTransfer} disabled={actioning || transferring}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    {transferring ? <Loader2 size={12} className="animate-spin" /> : <ArrowRightLeft size={12} />}
+                    Transfer
+                    <ChevronDown size={11} className={`transition-transform duration-150 ${showTransfer ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showTransfer && (
+                    <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                      <p className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">Transfer to</p>
+                      {loadingAgents ? (
+                        <div className="flex items-center justify-center py-5">
+                          <Loader2 size={16} className="animate-spin text-gray-400" />
+                        </div>
+                      ) : transferAgents.length === 0 ? (
+                        <p className="px-3 py-4 text-xs text-gray-400 text-center">No agents available</p>
+                      ) : (
+                        <div className="max-h-48 overflow-y-auto">
+                          {transferAgents.map((a) => (
+                            <button key={a.id} onClick={() => transferChat(a)}
+                              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 flex items-center gap-2.5 transition-colors border-b border-gray-50 last:border-0">
+                              <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                {a.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-gray-800 truncate">{a.name}</p>
+                                <p className="text-xs text-gray-400 capitalize">{a.workspace_role}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Resolve button */}
+                <button onClick={resolve} disabled={actioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+                  {actioning ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                  Resolve
+                </button>
+              </div>
             )}
           </div>
 
