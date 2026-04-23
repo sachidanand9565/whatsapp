@@ -51,7 +51,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       await insert(
         `INSERT INTO messages (workspace_id, contact_id, direction, type, content, status, sent_at, created_at)
          VALUES (?, ?, 'outbound', 'system', ?, 'delivered', ?, ?)`,
-        [payload.workspaceId, params.id, `Transferred to ${targetName}`, t, t]
+        [payload.workspaceId, params.id, `Transferred to ${targetName} by ${actorName}`, t, t]
       );
       return apiSuccess({ updated: true });
     }
