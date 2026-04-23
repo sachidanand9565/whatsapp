@@ -318,10 +318,24 @@ export default function InboxPage() {
   const loadContacts = useCallback(() => {
     apiFetch('/api/contacts?limit=200&chatStatus=inbox').then((r) => {
       const list: Contact[] = r.data?.data || [];
-      // Keep unread_count = 0 for the currently open contact
-      setContacts(list.map(c =>
-        selectedRef.current?.id === c.id ? { ...c, unread_count: 0 } : c
-      ));
+      setContacts(list);
+      setUnreadCounts(prev => {
+        const next = { ...prev };
+        list.forEach((c) => {
+          if (selectedRef.current?.id === c.id) {
+            next[c.id] = 0; // Always 0 for the open chat
+          } else {
+            const dbCount  = Number(c.unread_count) || 0;
+            const local    = prev[c.id] ?? 0;
+            // Use whichever is higher:
+            // - local > db  → chatbot reset the db count, keep local
+            // - db > local  → SSE was missed or page refresh, use db
+            next[c.id] = Math.max(local, dbCount);
+          }
+        });
+        saveUnread(next);
+        return next;
+      });
     });
   }, []);
 
