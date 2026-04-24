@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
     } else if (chatStatus === 'inbox') {
       // Only contacts who have sent an INBOUND message within 24h appear in inbox.
       // Outbound-only contacts (campaign recipients who haven't replied) stay in History.
-      // Transferred contacts: only visible to the assigned agent (hide from everyone else).
+      // Transferred contacts: only visible to the assigned agent (hide from everyone else in inbox).
       sql += ` AND EXISTS (
           SELECT 1 FROM messages m
           WHERE m.contact_id = c.id
@@ -100,6 +100,11 @@ export async function GET(req: NextRequest) {
           AND m.created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
         )
         AND (assigned_agent_id IS NULL OR assigned_agent_id = ${payload.userId})`;
+    } else if (chatStatus === 'intervened') {
+      // All intervened contacts — used by admin/manager intervened tab.
+      // agentFilterMain already handles agent-level visibility (empty for admin/manager).
+      sql      += " AND c.chat_status = 'intervened'";
+      countSql += " AND chat_status = 'intervened'";
     } else if (chatStatus === 'history') {
       // Contacts with no inbound message in last 24h (exact inverse of inbox)
       sql += ` AND NOT EXISTS (

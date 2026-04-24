@@ -315,6 +315,17 @@ export default function InboxPage() {
   const intervenedFilterRef                             = useRef<HTMLDivElement>(null);
   const currentUserName = typeof window !== 'undefined' ? (localStorage.getItem('userName') || '') : '';
   const currentUserRole = typeof window !== 'undefined' ? (localStorage.getItem('userRole') || '') : '';
+  // Decode userId from JWT (needed to match assigned_agent_id for "By Me" filter)
+  const currentUserId: number | null = (() => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) return null;
+      return JSON.parse(atob(token.split('.')[1])).userId ?? null;
+    } catch { return null; }
+  })();
+
+  // Separate contacts list for admin/manager intervened tab (includes all agents' transferred chats)
+  const [intervenedContacts, setIntervenedContacts] = useState<Contact[]>([]);
 
   // SSE-driven unread counts — persisted in localStorage, cleared on select
   const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>(() => {
@@ -348,11 +359,20 @@ export default function InboxPage() {
     });
   }, []);
 
+  // Load all intervened contacts for admin/manager (bypasses inbox assignment restriction)
+  const loadIntervenedContacts = useCallback(() => {
+    if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+    apiFetch('/api/contacts?chatStatus=intervened&limit=500').then((r) => {
+      setIntervenedContacts(r.data?.data || []);
+    });
+  }, [currentUserRole]);
+
   useEffect(() => {
     loadContacts();
-    const iv = setInterval(loadContacts, 60_000); // fallback poll every 60s
+    loadIntervenedContacts();
+    const iv = setInterval(() => { loadContacts(); loadIntervenedContacts(); }, 60_000);
     return () => clearInterval(iv);
-  }, [loadContacts]);
+  }, [loadContacts, loadIntervenedContacts]);
 
   const loadMessages = useCallback((contactId: number) => {
     apiFetch(`/api/messages?contactId=${contactId}&limit=80`).then((r) => setMessages(r.data || []));
@@ -374,6 +394,7 @@ export default function InboxPage() {
         const data = JSON.parse(e.data) as { type?: string; contactId?: number; direction?: string };
         if (data.type === 'new_message') {
           loadContacts();
+          loadIntervenedContacts();
           if (selectedRef.current?.id === data.contactId) {
             loadMessages(data.contactId!);
           } else if (data.contactId && data.direction === 'inbound') {
@@ -391,7 +412,7 @@ export default function InboxPage() {
     es.onerror = () => es.close(); // browser will reconnect on its own after close
 
     return () => es.close();
-  }, [loadContacts, loadMessages]);
+  }, [loadContacts, loadMessages, loadIntervenedContacts]);
 
   const loadTemplates = useCallback(() => {
     if (templates.length > 0) return;
@@ -616,6 +637,22 @@ export default function InboxPage() {
     (c.name || c.phone).toLowerCase().includes(search.toLowerCase())
   );
 
+  // Shared intervened sub-filter — used for badge count, dropdown count, and contact list
+  function matchesIntervenedFilter(c: Contact, fil: typeof intervenedFilter): boolean {
+    if (fil === 'any') return true;
+    if (fil === 'me') return (
+      (currentUserId != null && c.assigned_agent_id === currentUserId) ||
+      (!c.assigned_agent_id && c.intervened_by === currentUserName)
+    );
+    if (fil === 'other') return !(
+      (currentUserId != null && c.assigned_agent_id === currentUserId) ||
+      (!c.assigned_agent_id && c.intervened_by === currentUserName)
+    );
+    // Agent ID
+    const agentName = filterAgents.find((a) => a.id === fil)?.name;
+    return c.assigned_agent_id === fil || (!c.assigned_agent_id && c.intervened_by === agentName);
+  }
+
   const templateMsgCount = messages.filter((m) => m.type === 'template' && m.direction === 'outbound').length;
   const sessionMsgCount  = messages.filter((m) => m.direction === 'outbound' && m.type !== 'template').length;
 
@@ -636,8 +673,13 @@ export default function InboxPage() {
         {/* Tabs */}
         <div className="flex border-b border-gray-100">
           {(['all', 'requested', 'intervened'] as const).map((t) => {
-            const requestedCount  = filtered.filter((c) => (c.chat_status === 'open' || !c.chat_status) && Number(c.inbound_count) > 0).length;
-            const intervenedCount = filtered.filter((c) => c.chat_status === 'intervened').length;
+            const requestedCount   = filtered.filter((c) => (c.chat_status === 'open' || !c.chat_status) && Number(c.inbound_count) > 0).length;
+            const isAdminOrManager = currentUserRole === 'admin' || currentUserRole === 'manager';
+            const intervenedSource = isAdminOrManager
+              ? intervenedContacts.filter((c) => (c.name || c.phone).toLowerCase().includes(search.toLowerCase()))
+              : filtered.filter((c) => c.chat_status === 'intervened');
+            // Badge shows count matching the current active sub-filter
+            const intervenedCount  = intervenedSource.filter((c) => matchesIntervenedFilter(c, intervenedFilter)).length;
             const label =
               t === 'all' ? `All (${contacts.length})` :
               t === 'requested' ? (
@@ -675,16 +717,10 @@ export default function InboxPage() {
                 intervenedFilter === 'other' ? 'Intervened By Other' :
                 selectedAgent ? `Intervened By ${selectedAgent.name}` : 'Intervened By Agent';
 
-              // Count using same logic as the list filter below
-              const filterCount = filtered.filter((c) => {
-                if (c.chat_status !== 'intervened') return false;
-                if (intervenedFilter === 'any') return true;
-                if (intervenedFilter === 'me') return !c.assigned_agent_id && c.intervened_by === currentUserName;
-                if (intervenedFilter === 'other') return c.assigned_agent_id != null || c.intervened_by !== currentUserName;
-                // agent ID filter: transferred to this agent OR they directly intervened
-                return c.assigned_agent_id === intervenedFilter ||
-                  (!c.assigned_agent_id && c.intervened_by === selectedAgent?.name);
-              }).length;
+              // Count from intervenedContacts using the shared filter helper
+              const filterCount = intervenedContacts
+                .filter((c) => (c.name || c.phone).toLowerCase().includes(search.toLowerCase()))
+                .filter((c) => matchesIntervenedFilter(c, intervenedFilter)).length;
 
               return (
                 <button
@@ -738,24 +774,29 @@ export default function InboxPage() {
 
         {/* Contact items */}
         <div className="flex-1 overflow-y-auto">
-          {filtered.length === 0 && (
-            <p className="text-center text-gray-400 text-xs py-10">No contacts</p>
-          )}
-          {filtered
+          {(() => {
+            const isAdminOrManager = currentUserRole === 'admin' || currentUserRole === 'manager';
+            // For admin/manager intervened tab: use the dedicated intervenedContacts list
+            const source = (tab === 'intervened' && isAdminOrManager)
+              ? intervenedContacts.filter((c) => (c.name || c.phone).toLowerCase().includes(search.toLowerCase()))
+              : filtered;
+            if (source.length === 0 && tab !== 'all' && tab !== 'requested') {
+              return <p className="text-center text-gray-400 text-xs py-10">No contacts</p>;
+            }
+            return null;
+          })()}
+          {(() => {
+            const isAdminOrManager = currentUserRole === 'admin' || currentUserRole === 'manager';
+            const source = (tab === 'intervened' && isAdminOrManager)
+              ? intervenedContacts.filter((c) => (c.name || c.phone).toLowerCase().includes(search.toLowerCase()))
+              : filtered;
+            return source;
+          })()
             .filter((c) => {
               if (tab === 'all') return true;
               if (tab === 'requested') return c.chat_status === 'open' && Number(c.inbound_count) > 0;
-              // intervened tab with sub-filter
               if (c.chat_status !== 'intervened') return false;
-              if (intervenedFilter === 'any') return true;
-              // "By Me": I directly intervened (no transfer), or no agent assigned and I intervened
-              if (intervenedFilter === 'me') return !c.assigned_agent_id && c.intervened_by === currentUserName;
-              // "By Other": anything that isn't "By Me"
-              if (intervenedFilter === 'other') return c.assigned_agent_id != null || c.intervened_by !== currentUserName;
-              // Agent ID filter: chat transferred to this agent OR agent directly intervened (no transfer)
-              const agentName = filterAgents.find((a) => a.id === intervenedFilter)?.name;
-              return c.assigned_agent_id === intervenedFilter ||
-                (!c.assigned_agent_id && c.intervened_by === agentName);
+              return matchesIntervenedFilter(c, intervenedFilter);
             })
             .map((c) => {
             // Local state is primary (SSE-driven); DB subquery is fallback for page-refresh
@@ -832,7 +873,7 @@ export default function InboxPage() {
                 {/* Transfer dropdown */}
                 <div className="relative" ref={transferRef}>
                   <button onClick={openTransfer} disabled={actioning || transferring}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-400 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
                     {transferring ? <Loader2 size={12} className="animate-spin" /> : <ArrowRightLeft size={12} />}
                     Transfer
                     <ChevronDown size={11} className={`transition-transform duration-150 ${showTransfer ? 'rotate-180' : ''}`} />

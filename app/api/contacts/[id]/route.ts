@@ -77,7 +77,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       const sets: string[] = ['chat_status = ?'];
       const vals: unknown[] = [chat_status];
       if (chat_status === 'intervened') {
-        sets.push('intervened_by = ?');
+        sets.push('intervened_by = ?', 'assigned_agent_id = NULL');
         vals.push(actorName);
       } else if (chat_status === 'resolved' || chat_status === 'open') {
         // Clear agent assignment so next inbound is visible to all (admin + campaigns)
