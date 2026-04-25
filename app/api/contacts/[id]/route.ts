@@ -109,11 +109,25 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return apiSuccess({ updated: true });
     }
 
-    // Normal profile update
+    // Partial update — only set fields that were actually sent in the request
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+
+    if (name      !== undefined) { sets.push('name = ?');     vals.push(name); }
+    if (email     !== undefined) { sets.push('email = ?');    vals.push(email); }
+    if (city      !== undefined) { sets.push('city = ?');     vals.push(city); }
+    if (source    !== undefined) { sets.push('source = ?');   vals.push(source); }
+    if (status    !== undefined) { sets.push('status = ?');   vals.push(status); }
+    if (tags      !== undefined) { sets.push('tags = ?');     vals.push(JSON.stringify(tags || [])); }
+    if (notes     !== undefined) { sets.push('notes = ?');    vals.push(notes); }
+    if (opted_in  !== undefined) { sets.push('opted_in = ?'); vals.push(opted_in ? 1 : 0); }
+
+    if (sets.length === 0) return apiSuccess({ updated: false });
+
+    vals.push(params.id, payload.workspaceId);
     await execute(
-      `UPDATE contacts SET name=?, email=?, city=?, source=?, status=?, tags=?, notes=?, opted_in=?
-       WHERE id = ? AND workspace_id = ?`,
-      [name, email, city, source, status, JSON.stringify(tags || []), notes, opted_in ? 1 : 0, params.id, payload.workspaceId]
+      `UPDATE contacts SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`,
+      vals
     );
     return apiSuccess({ updated: true });
   } catch (err: unknown) {

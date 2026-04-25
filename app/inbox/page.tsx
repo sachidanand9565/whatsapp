@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { apiFetch } from '@/hooks/useApi';
-import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock, ArrowRightLeft } from 'lucide-react';
+import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock, ArrowRightLeft, Zap, Plus, Trash2, Tag } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Contact, Message } from '@/types';
 
@@ -191,9 +191,67 @@ function TemplateBubble({ data, status, time }: { data: TemplateContent; status:
 }
 
 // ── Contact Profile Panel ─────────────────────────────────────
-function ProfilePanel({ contact, templateMsgCount, sessionMsgCount }: { contact: Contact; templateMsgCount: number; sessionMsgCount: number }) {
+function ProfilePanel({ contact, templateMsgCount, sessionMsgCount, onContactUpdate }: {
+  contact: Contact;
+  templateMsgCount: number;
+  sessionMsgCount: number;
+  onContactUpdate: (updated: Partial<Contact>) => void;
+}) {
   const [open, setOpen] = useState<Record<string, boolean>>({ info: true });
   const toggle = (k: string) => setOpen(p => ({ ...p, [k]: !p[k] }));
+
+  // Notes editing
+  const [notesVal, setNotesVal]       = useState(contact.notes || '');
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      await apiFetch(`/api/contacts/${contact.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ notes: notesVal }),
+      });
+      onContactUpdate({ notes: notesVal });
+      toast.success('Notes saved');
+    } catch { toast.error('Failed to save notes'); }
+    finally { setSavingNotes(false); }
+  }
+
+  // Tags editing
+  const parseTags = (t: unknown): string[] => {
+    if (Array.isArray(t)) return t;
+    try { return JSON.parse(t as string) || []; } catch { return []; }
+  };
+  const [tagList, setTagList]       = useState<string[]>(() => parseTags(contact.tags));
+  const [tagInput, setTagInput]     = useState('');
+  const [savingTags, setSavingTags] = useState(false);
+
+  async function saveTags(newTags: string[]) {
+    setSavingTags(true);
+    try {
+      await apiFetch(`/api/contacts/${contact.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ tags: newTags }),
+      });
+      onContactUpdate({ tags: newTags as unknown as string });
+    } catch { toast.error('Failed to save tags'); }
+    finally { setSavingTags(false); }
+  }
+
+  function addTag() {
+    const t = tagInput.trim();
+    if (!t || tagList.includes(t)) return;
+    const next = [...tagList, t];
+    setTagList(next);
+    setTagInput('');
+    saveTags(next);
+  }
+
+  function removeTag(t: string) {
+    const next = tagList.filter((x) => x !== t);
+    setTagList(next);
+    saveTags(next);
+  }
 
   const initial = (contact.name || contact.phone || '?').charAt(0).toUpperCase();
   const avatarColors = ['bg-orange-400', 'bg-purple-500', 'bg-blue-500', 'bg-green-500', 'bg-red-400'];
@@ -255,16 +313,34 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount }: { contact:
       <div className="border-b border-gray-100">
         <button onClick={() => toggle('tags')}
           className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-          Tags
+          <span className="flex items-center gap-1.5"><Tag size={13} /> Tags</span>
           {open.tags ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </button>
         {open.tags && (
-          <div className="px-4 pb-4">
-            {contact.tags && (Array.isArray(contact.tags) ? contact.tags : (() => { try { return JSON.parse(contact.tags as string); } catch { return []; } })()).length > 0
-              ? (Array.isArray(contact.tags) ? contact.tags : JSON.parse(contact.tags as string)).map((t: string, i: number) => (
-                <span key={i} className="inline-block bg-blue-100 text-blue-700 text-xs rounded-full px-2.5 py-0.5 mr-1 mb-1">{t}</span>
-              ))
-              : <p className="text-xs text-gray-400">No tags</p>}
+          <div className="px-4 pb-4 space-y-2">
+            <div className="flex flex-wrap gap-1 min-h-[24px]">
+              {tagList.length > 0
+                ? tagList.map((t) => (
+                    <span key={t} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs rounded-full px-2.5 py-0.5">
+                      {t}
+                      <button onClick={() => removeTag(t)} disabled={savingTags} className="hover:text-blue-900 leading-none">×</button>
+                    </span>
+                  ))
+                : <p className="text-xs text-gray-400">No tags yet</p>}
+            </div>
+            <div className="flex gap-1.5">
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addTag()}
+                placeholder="Add tag..."
+                className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-whatsapp-green"
+              />
+              <button onClick={addTag} disabled={!tagInput.trim() || savingTags}
+                className="px-2.5 py-1.5 bg-whatsapp-green text-white rounded-lg text-xs disabled:opacity-40">
+                <Plus size={12} />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -277,8 +353,21 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount }: { contact:
           {open.notes ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </button>
         {open.notes && (
-          <div className="px-4 pb-4">
-            <p className="text-xs text-gray-400">{contact.notes || 'No notes'}</p>
+          <div className="px-4 pb-4 space-y-2">
+            <textarea
+              value={notesVal}
+              onChange={(e) => setNotesVal(e.target.value)}
+              rows={3}
+              placeholder="Write internal notes about this contact..."
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-whatsapp-green resize-none"
+            />
+            <button
+              onClick={saveNotes}
+              disabled={savingNotes || notesVal === (contact.notes || '')}
+              className="w-full py-1.5 bg-whatsapp-green text-white text-xs font-semibold rounded-lg disabled:opacity-40 flex items-center justify-center gap-1">
+              {savingNotes ? <Loader2 size={12} className="animate-spin" /> : null}
+              Save Notes
+            </button>
           </div>
         )}
       </div>
@@ -304,6 +393,46 @@ export default function InboxPage() {
   const [loadingAgents, setLoadingAgents]   = useState(false);
   const [transferring, setTransferring]     = useState(false);
   const transferRef                         = useRef<HTMLDivElement>(null);
+
+  // Quick Replies
+  const [quickReplies, setQuickReplies]       = useState<{ id: number; title: string; content: string }[]>([]);
+  const [showQR, setShowQR]                   = useState(false);
+  const [showQRManage, setShowQRManage]       = useState(false);
+  const [qrForm, setQrForm]                   = useState({ title: '', content: '' });
+  const [savingQR, setSavingQR]               = useState(false);
+  const qrRef                                 = useRef<HTMLDivElement>(null);
+
+  const loadQuickReplies = useCallback(() => {
+    apiFetch('/api/quick-replies').then((r) => setQuickReplies(r.data || []));
+  }, []);
+
+  useEffect(() => { loadQuickReplies(); }, [loadQuickReplies]);
+
+  useEffect(() => {
+    if (!showQR) return;
+    function handleOut(e: MouseEvent) {
+      if (qrRef.current && !qrRef.current.contains(e.target as Node)) setShowQR(false);
+    }
+    document.addEventListener('mousedown', handleOut);
+    return () => document.removeEventListener('mousedown', handleOut);
+  }, [showQR]);
+
+  async function saveQuickReply() {
+    if (!qrForm.title.trim() || !qrForm.content.trim()) return;
+    setSavingQR(true);
+    try {
+      await apiFetch('/api/quick-replies', { method: 'POST', body: JSON.stringify(qrForm) });
+      setQrForm({ title: '', content: '' });
+      loadQuickReplies();
+      toast.success('Quick reply saved!');
+    } catch { toast.error('Failed to save'); }
+    finally { setSavingQR(false); }
+  }
+
+  async function deleteQuickReply(id: number) {
+    await apiFetch(`/api/quick-replies/${id}`, { method: 'DELETE' });
+    setQuickReplies((prev) => prev.filter((q) => q.id !== id));
+  }
   const bottomRef                           = useRef<HTMLDivElement>(null);
   const chatRef                             = useRef<HTMLDivElement>(null);
 
@@ -1072,21 +1201,86 @@ export default function InboxPage() {
           {selected.chat_status === 'intervened' ? (
             isSessionOpen ? (
               /* Session active — full text input */
-              <div className="p-3 border-t border-gray-200 bg-white flex gap-2 items-center">
-                <input value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                  placeholder="Type a message..."
-                  className="input flex-1 text-sm" />
-                <button onClick={() => { loadTemplates(); setShowTemplates((v) => !v); }}
-                  title="Send template"
-                  className="p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 transition-colors">
-                  <LayoutTemplate size={16} />
-                </button>
-                <button onClick={sendMessage} disabled={sending || !text.trim()}
-                  className="btn-primary px-4 py-2.5 disabled:opacity-50">
-                  {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                </button>
+              <div className="border-t border-gray-200 bg-white">
+                {/* Quick Replies panel */}
+                {showQR && (
+                  <div ref={qrRef} className="border-b border-gray-100 bg-gray-50">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                      <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                        <Zap size={12} className="text-yellow-500" /> Quick Replies
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setShowQRManage((v) => !v)}
+                          className="text-xs text-whatsapp-teal font-medium hover:underline">
+                          {showQRManage ? 'Done' : 'Manage'}
+                        </button>
+                        <button onClick={() => setShowQR(false)} className="text-gray-400 hover:text-gray-600">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Manage form */}
+                    {showQRManage && (
+                      <div className="px-3 py-2 space-y-2 border-b border-gray-100">
+                        <input value={qrForm.title} onChange={(e) => setQrForm({ ...qrForm, title: e.target.value })}
+                          placeholder="Title (e.g. Greeting)" className="input text-xs py-1.5" />
+                        <textarea value={qrForm.content} onChange={(e) => setQrForm({ ...qrForm, content: e.target.value })}
+                          placeholder="Message content..." rows={2}
+                          className="input text-xs py-1.5 resize-none" />
+                        <button onClick={saveQuickReply} disabled={savingQR || !qrForm.title.trim() || !qrForm.content.trim()}
+                          className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-40">
+                          <Plus size={12} /> {savingQR ? 'Saving...' : 'Add Quick Reply'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* List */}
+                    <div className="max-h-40 overflow-y-auto divide-y divide-gray-50">
+                      {quickReplies.length === 0
+                        ? <p className="text-center text-xs text-gray-400 py-4">No quick replies yet. Click Manage to add.</p>
+                        : quickReplies.map((qr) => (
+                          <div key={qr.id} className="flex items-start gap-2 px-3 py-2 hover:bg-white transition-colors group">
+                            <button onClick={() => { setText(qr.content); setShowQR(false); }}
+                              className="flex-1 text-left min-w-0">
+                              <p className="text-xs font-semibold text-gray-800">{qr.title}</p>
+                              <p className="text-xs text-gray-400 truncate">{qr.content}</p>
+                            </button>
+                            {showQRManage && (
+                              <button onClick={() => deleteQuickReply(qr.id)}
+                                className="text-gray-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 flex gap-2 items-center">
+                  <input value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                    placeholder="Type a message..."
+                    className="input flex-1 text-sm" />
+                  {/* Quick Reply button */}
+                  <button onClick={() => setShowQR((v) => !v)}
+                    title="Quick Replies"
+                    className={`p-2.5 rounded-lg border transition-colors ${showQR ? 'border-yellow-300 bg-yellow-50 text-yellow-600' : 'border-gray-200 hover:bg-gray-50 text-gray-500'}`}>
+                    <Zap size={16} />
+                  </button>
+                  <button onClick={() => { loadTemplates(); setShowTemplates((v) => !v); }}
+                    title="Send template"
+                    className="p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 transition-colors">
+                    <LayoutTemplate size={16} />
+                  </button>
+                  <button onClick={sendMessage} disabled={sending || !text.trim()}
+                    className="btn-primary px-4 py-2.5 disabled:opacity-50">
+                    {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  </button>
+                </div>
               </div>
             ) : (
               /* Session expired — disabled input + template button */
@@ -1138,7 +1332,16 @@ export default function InboxPage() {
 
       {/* ── Right: Profile Panel ────────────────────────────── */}
       {selected && (
-        <ProfilePanel contact={selected} templateMsgCount={templateMsgCount} sessionMsgCount={sessionMsgCount} />
+        <ProfilePanel
+          key={selected.id}
+          contact={selected}
+          templateMsgCount={templateMsgCount}
+          sessionMsgCount={sessionMsgCount}
+          onContactUpdate={(updated) => {
+            setSelected((prev) => prev ? { ...prev, ...updated } : prev);
+            setContacts((prev) => prev.map((c) => c.id === selected.id ? { ...c, ...updated } : c));
+          }}
+        />
       )}
     </div>
   );
