@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
 
     // Get user
     const users = await query<RowDataPacket[]>(
-      'SELECT u.*, wm.workspace_id FROM users u LEFT JOIN workspace_members wm ON wm.user_id = u.id WHERE u.email = ? LIMIT 1',
+      'SELECT id, name, email, password, role, is_active FROM users WHERE email = ? LIMIT 1',
       [email]
     );
     if (users.length === 0) return apiError('Invalid credentials', 401);
@@ -24,17 +24,31 @@ export async function POST(req: NextRequest) {
     if (!valid) return apiError('Invalid credentials', 401);
     if (!user.is_active) return apiError('Account disabled', 403);
 
+    // Get ALL workspaces for this user (ordered by id so first is oldest/default)
+    const workspaces = await query<RowDataPacket[]>(
+      `SELECT w.id, w.name, w.phone_number_id, w.plan, wm.role
+       FROM workspaces w
+       JOIN workspace_members wm ON wm.workspace_id = w.id
+       WHERE wm.user_id = ?
+       ORDER BY w.id ASC`,
+      [user.id]
+    );
+    if (workspaces.length === 0) return apiError('No workspace found for this account', 403);
+
+    const defaultWs = workspaces[0];
+
     const token = signToken({
       userId:      user.id as number,
       email:       user.email as string,
-      role:        user.role as string,
-      workspaceId: user.workspace_id as number,
+      role:        defaultWs.role as string,
+      workspaceId: defaultWs.id as number,
     });
 
     const response = apiSuccess({
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      workspaceId: user.workspace_id,
+      user: { id: user.id, name: user.name, email: user.email, role: defaultWs.role },
+      workspaceId: defaultWs.id,
+      workspaces:  workspaces.map((w) => ({ id: w.id, name: w.name, phone_number_id: w.phone_number_id, plan: w.plan, role: w.role })),
     });
     response.cookies.set('token', token, {
       httpOnly: true,
