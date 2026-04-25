@@ -233,7 +233,7 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount, onContactUpd
         method: 'PUT',
         body: JSON.stringify({ tags: newTags }),
       });
-      onContactUpdate({ tags: newTags as unknown as string });
+      onContactUpdate({ tags: newTags });
     } catch { toast.error('Failed to save tags'); }
     finally { setSavingTags(false); }
   }
