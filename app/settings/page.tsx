@@ -4,7 +4,7 @@ import { apiFetch } from '@/hooks/useApi';
 import {
   Save, Eye, EyeOff, Copy, CheckCircle, AlertTriangle,
   Webhook, RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight,
-  Facebook, ChevronRight, X, Phone, Loader2, Key, RotateCcw,
+  Facebook, ChevronRight, X, Phone, Loader2, Key, RotateCcw, Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -13,7 +13,7 @@ declare global {
   interface Window {
     FB: {
       init(opts: object): void;
-      login(cb: (res: { authResponse?: { accessToken: string } }) => void, opts: object): void;
+      login(cb: (res: { authResponse?: { accessToken?: string; code?: string } }) => void, opts: object): void;
     };
     fbAsyncInit?: () => void;
   }
@@ -192,7 +192,12 @@ export default function SettingsPage() {
   const [connecting, setConnecting]   = useState(false);
   const [connectResults, setConnectResults] = useState<{ step: string; status: string; detail?: string }[] | null>(null);
 
-  // Embedded Signup: WABA + phone data arrives via postMessage before FB.login callback
+  // WABA ID input modal (fallback when BSP not available)
+  const [showWabaInput, setShowWabaInput]   = useState(false);
+  const [wabaInputId, setWabaInputId]       = useState('');
+  const [fetchingPhones, setFetchingPhones] = useState(false);
+
+  // BSP Embedded Signup — postMessage data from Meta popup
   const embeddedDataRef = useRef<{ waba_id: string; phone_number_id: string } | null>(null);
 
   // Custom webhooks
@@ -207,39 +212,41 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey]   = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
 
-  const APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '';
+  const APP_ID    = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '';
+  const CONFIG_ID = process.env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID || '';
+  const BSP_READY = !!(APP_ID && CONFIG_ID);
 
-  // Load Facebook JS SDK + listen for Embedded Signup postMessage
+  // Load Facebook JS SDK + BSP postMessage listener
   useEffect(() => {
-    // Embedded Signup sends waba_id + phone_number_id via postMessage
-    function handleMessage(event: MessageEvent) {
-      if (event.origin !== 'https://www.facebook.com') return;
+    // BSP Embedded Signup sends waba_id + phone_number_id via postMessage
+    function handleMessage(e: MessageEvent) {
+      if (e.origin !== 'https://www.facebook.com') return;
       try {
-        const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
         if (msg?.type === 'WA_EMBEDDED_SIGNUP' && msg?.event === 'FINISH' && msg?.data) {
           embeddedDataRef.current = {
-            waba_id:         msg.data.waba_id,
-            phone_number_id: msg.data.phone_number_id,
+            waba_id:         String(msg.data.waba_id),
+            phone_number_id: String(msg.data.phone_number_id),
           };
         }
-      } catch { /* ignore parse errors */ }
+      } catch { /* ignore */ }
     }
     window.addEventListener('message', handleMessage);
 
-    if (!APP_ID) return () => window.removeEventListener('message', handleMessage);
-    if (document.getElementById('facebook-jssdk')) {
+    if (APP_ID && !document.getElementById('facebook-jssdk')) {
+      window.fbAsyncInit = () => {
+        window.FB.init({ appId: APP_ID, version: 'v20.0', xfbml: false, cookie: true });
+        setFbLoaded(true);
+      };
+      const s = document.createElement('script');
+      s.id = 'facebook-jssdk';
+      s.src = 'https://connect.facebook.net/en_US/sdk.js';
+      s.async = true;
+      document.body.appendChild(s);
+    } else if (APP_ID) {
       setFbLoaded(true);
-      return () => window.removeEventListener('message', handleMessage);
     }
-    window.fbAsyncInit = () => {
-      window.FB.init({ appId: APP_ID, version: 'v20.0', xfbml: false, cookie: true });
-      setFbLoaded(true);
-    };
-    const script = document.createElement('script');
-    script.id  = 'facebook-jssdk';
-    script.src = 'https://connect.facebook.net/en_US/sdk.js';
-    script.async = true;
-    document.body.appendChild(script);
+
     return () => window.removeEventListener('message', handleMessage);
   }, [APP_ID]);
 
@@ -264,36 +271,73 @@ export default function SettingsPage() {
     apiFetch('/api/webhooks').then((r) => setHooks(r.data || []));
   }
 
-  // Step 1: Facebook Embedded Signup → WABA + phone via postMessage, token via callback
+  // ── BSP Embedded Signup (when CONFIG_ID is set) ──────────────
   function loginWithFacebook() {
     if (!window.FB) { toast.error('Facebook SDK not loaded yet'); return; }
-    embeddedDataRef.current = null; // reset before each attempt
+    embeddedDataRef.current = null;
     setFbLoading(true);
-    window.FB.login((res) => {
-      setFbLoading(false);
-      if (!res.authResponse?.accessToken) {
-        toast.error('Facebook login cancelled or failed');
-        return;
-      }
-      const token = res.authResponse.accessToken;
-      setFbToken(token);
 
-      // Embedded Signup sends waba_id + phone_number_id via postMessage (stored in ref)
-      const embedded = embeddedDataRef.current;
-      if (embedded?.waba_id && embedded?.phone_number_id) {
-        // Auto-connect directly — no WABA picker modal needed
-        handleConnect(embedded.waba_id, embedded.phone_number_id, '', token);
-      } else {
-        // Popup closed without completing Embedded Signup
-        toast.error('WhatsApp account selection not completed. Please complete all steps in the popup and try again.');
-      }
-    }, {
-      scope: 'whatsapp_business_management,whatsapp_business_messaging',
-      extras: {
-        feature:            'whatsapp_embedded_signup',
-        sessionInfoVersion: 2,
-      },
-    });
+    if (BSP_READY) {
+      // Full Embedded Signup — user sets up business + WABA + phone inside Meta popup
+      window.FB.login((res) => {
+        setFbLoading(false);
+        const code = res.authResponse?.code;
+        if (!code) { toast.error('Facebook login cancelled or failed'); return; }
+
+        const embedded = embeddedDataRef.current;
+        if (!embedded?.waba_id || !embedded?.phone_number_id) {
+          toast.error('WhatsApp setup not completed inside the popup. Please try again and complete all steps.');
+          return;
+        }
+
+        // Exchange code → long-lived token, then connect
+        setConnecting(true);
+        apiFetch('/api/auth/meta/exchange', { method: 'POST', body: JSON.stringify({ code }) })
+          .then((r) => {
+            const token = r.data?.access_token;
+            if (!token) { toast.error('Token exchange failed'); return; }
+            setFbToken(token);
+            return handleConnect(embedded.waba_id, embedded.phone_number_id, '', token);
+          })
+          .catch((e) => toast.error(e?.message || 'Connect failed'))
+          .finally(() => setConnecting(false));
+      }, {
+        config_id:                    CONFIG_ID,
+        response_type:                'code',
+        override_default_response_type: true,
+        extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+      });
+    } else {
+      // Fallback (no BSP access yet) — FB login → manual WABA ID entry
+      window.FB.login((res) => {
+        setFbLoading(false);
+        if (!res.authResponse?.accessToken) { toast.error('Facebook login cancelled or failed'); return; }
+        setFbToken(res.authResponse.accessToken);
+        setWabaInputId('');
+        setShowWabaInput(true);
+      }, {
+        scope: 'whatsapp_business_management,whatsapp_business_messaging',
+      });
+    }
+  }
+
+  // Fallback: fetch phones for manually entered WABA ID
+  async function fetchPhonesForWaba() {
+    if (!wabaInputId.trim() || !fbToken) return;
+    setFetchingPhones(true);
+    try {
+      const res  = await fetch(
+        `https://graph.facebook.com/v20.0/${wabaInputId.trim()}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${fbToken}`
+      );
+      const data = await res.json();
+      if (data.error) { toast.error(`Meta: ${data.error.message}`); return; }
+      const phones = (data.data || []) as WABAOption['phone_numbers'];
+      if (phones.length === 0) { toast.error('No verified phone numbers found on this WABA.'); return; }
+      setShowWabaInput(false);
+      setWabas([{ id: wabaInputId.trim(), name: wabaInputId.trim(), business_name: '', phone_numbers: phones }]);
+    } finally {
+      setFetchingPhones(false);
+    }
   }
 
   // Step 2: Connect with obtained credentials
@@ -436,21 +480,40 @@ export default function SettingsPage() {
         {/* ── LEFT COLUMN ── */}
         <div className="space-y-6">
 
-          {/* Meta Embedded Signup */}
+          {/* Meta Facebook Connect */}
           <div className="card space-y-4">
             <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
               <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
                 <Facebook size={18} className="text-white" />
               </div>
-              <div>
-                <h2 className="font-semibold text-gray-900">Connect via Facebook</h2>
-                <p className="text-xs text-gray-400">One-click setup — automatically configures webhook & imports templates</p>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold text-gray-900">Connect via Facebook</h2>
+                  {BSP_READY
+                    ? <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1"><Zap size={10} />BSP</span>
+                    : <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">Pending BSP</span>
+                  }
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {BSP_READY
+                    ? 'One-click — user sets up business & WhatsApp inside Meta popup'
+                    : 'Full auto-setup will be enabled once BSP access is approved'}
+                </p>
               </div>
             </div>
 
             {!APP_ID && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-700">
                 <p className="font-semibold">Set <code className="bg-yellow-100 px-1 rounded">NEXT_PUBLIC_FACEBOOK_APP_ID</code> in your .env to enable this.</p>
+              </div>
+            )}
+
+            {!BSP_READY && APP_ID && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
+                <p className="font-semibold">Once BSP access is approved:</p>
+                <p>1. Go to Meta App Dashboard → WhatsApp → Embedded Signup → Create a Configuration</p>
+                <p>2. Set <code className="bg-blue-100 px-1 rounded">NEXT_PUBLIC_FACEBOOK_CONFIG_ID</code> = Configuration ID in your .env</p>
+                <p>3. Restart the server — full one-click setup will be ready</p>
               </div>
             )}
 
@@ -482,14 +545,23 @@ export default function SettingsPage() {
                 className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
                 {(fbLoading || connecting)
                   ? <><Loader2 size={18} className="animate-spin" /> Connecting...</>
-                  : <><Facebook size={18} /> Connect WhatsApp Business Account</>}
+                  : <><Facebook size={18} /> {BSP_READY ? 'Setup WhatsApp Business' : 'Connect via Facebook'}</>}
               </button>
             )}
 
             <div className="text-xs text-gray-400 space-y-1">
-              <p>✓ Automatically detects your WABA ID, Phone Number ID & Access Token</p>
-              <p>✓ Subscribes Meta webhook for messages, delivery & read receipts</p>
-              <p>✓ Imports all approved templates from Meta into your account</p>
+              {BSP_READY ? (
+                <>
+                  <p>✓ User creates or selects their business inside the Meta popup</p>
+                  <p>✓ Adds or selects a WhatsApp number — everything auto-detected</p>
+                  <p>✓ Webhook subscribed & templates imported automatically</p>
+                </>
+              ) : (
+                <>
+                  <p>✓ Login with Facebook → enter your WABA ID → phone numbers auto-detected</p>
+                  <p>✓ Webhook subscribed & templates imported automatically</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -734,7 +806,38 @@ Body:
         
       </div>
 
-      {/* Modals */}
+      {/* WABA ID Input Modal */}
+      {showWabaInput && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="font-bold text-gray-900">Enter Your WABA ID</p>
+                <p className="text-xs text-gray-400 mt-0.5">Find it in Meta Business Manager → WhatsApp Accounts</p>
+              </div>
+              <button onClick={() => setShowWabaInput(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
+            <input
+              value={wabaInputId}
+              onChange={(e) => setWabaInputId(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && fetchPhonesForWaba()}
+              className="input w-full font-mono mb-4"
+              placeholder="e.g. 1736454720919400"
+              autoFocus
+            />
+            <button
+              onClick={fetchPhonesForWaba}
+              disabled={!wabaInputId.trim() || fetchingPhones}
+              className="btn-primary w-full flex items-center justify-center gap-2">
+              {fetchingPhones
+                ? <><Loader2 size={16} className="animate-spin" /> Fetching phones...</>
+                : <>Fetch Phone Numbers <ChevronRight size={16} /></>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* WABA + Phone Picker Modal */}
       {wabas && (
         <MetaConnectModal
           wabas={wabas}
