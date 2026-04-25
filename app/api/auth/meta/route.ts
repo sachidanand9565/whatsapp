@@ -15,25 +15,16 @@ export async function POST(req: NextRequest) {
     const { access_token } = await req.json();
     if (!access_token) return apiError('access_token required', 400);
 
-    // 1. Get user's businesses
-    const bizRes = await fetch(
-      `https://graph.facebook.com/${GV}/me/businesses?fields=id,name,whatsapp_business_accounts{id,name,currency,timezone_id}&access_token=${access_token}`
+    // 1. Get WABAs directly from the user token (no business_management permission needed)
+    const wabaRes = await fetch(
+      `https://graph.facebook.com/${GV}/me/whatsapp_business_accounts?fields=id,name,currency,timezone_id&access_token=${access_token}`
     );
-    const bizData = await bizRes.json();
-    if (bizData.error) return apiError(`Meta: ${bizData.error.message}`, 400);
+    const wabaData = await wabaRes.json();
+    if (wabaData.error) return apiError(`Meta: ${wabaData.error.message}`, 400);
 
-    const businesses: {
-      id: string; name: string;
-      whatsapp_business_accounts?: { data: { id: string; name: string }[] };
-    }[] = bizData.data || [];
-
-    // Collect all WABAs across businesses
-    const wabas: { id: string; name: string; business_name: string }[] = [];
-    for (const biz of businesses) {
-      for (const waba of (biz.whatsapp_business_accounts?.data || [])) {
-        wabas.push({ id: waba.id, name: waba.name || waba.id, business_name: biz.name });
-      }
-    }
+    const wabas: { id: string; name: string; business_name: string }[] = (wabaData.data || []).map(
+      (w: { id: string; name?: string }) => ({ id: w.id, name: w.name || w.id, business_name: w.name || w.id })
+    );
 
     // 2. For each WABA, fetch phone numbers
     const wabasWithPhones = await Promise.all(

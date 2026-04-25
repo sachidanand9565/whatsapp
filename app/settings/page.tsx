@@ -268,7 +268,7 @@ export default function SettingsPage() {
         toast.error(err instanceof Error ? err.message : 'Failed to fetch accounts');
       });
     }, {
-      scope: 'whatsapp_business_management,whatsapp_business_messaging,business_management',
+      scope: 'whatsapp_business_management,whatsapp_business_messaging',
       return_scopes: true,
     });
   }
