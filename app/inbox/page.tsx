@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { apiFetch } from '@/hooks/useApi';
 import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock, ArrowRightLeft, Zap, Plus, Trash2, Tag, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -403,7 +402,6 @@ function renderTplPreview(text: string): React.ReactNode {
 
 // ── Main Inbox Page ───────────────────────────────────────────
 export default function InboxPage() {
-  const searchParams                = useSearchParams();
   const [contacts, setContacts]     = useState<Contact[]>([]);
   const [selected, setSelected]     = useState<Contact | null>(null);
   const [messages, setMessages]     = useState<Message[]>([]);
@@ -535,32 +533,6 @@ export default function InboxPage() {
   const loadMessages = useCallback((contactId: number) => {
     apiFetch(`/api/messages?contactId=${contactId}&limit=80`).then((r) => setMessages(r.data || []));
   }, []);
-
-  // Auto-open contact when navigating from campaigns page (?phone=...)
-  const openPhoneParam = searchParams.get('phone');
-  useEffect(() => {
-    if (!openPhoneParam) return;
-    // Fetch the contact by phone regardless of chatStatus
-    apiFetch(`/api/contacts?search=${encodeURIComponent(openPhoneParam)}&limit=1`)
-      .then((r) => {
-        const contact: Contact | undefined = (r.data?.data || [])[0];
-        if (contact) {
-          setSelected(contact);
-          loadMessages(contact.id);
-          // Also add to contacts list if not already present
-          setContacts(prev =>
-            prev.find(c => c.id === contact.id) ? prev : [contact, ...prev]
-          );
-          // Switch to 'all' tab so the contact is visible in the sidebar
-          setTab('all');
-        } else {
-          toast.error('Contact not found');
-        }
-      })
-      .catch(() => toast.error('Failed to open contact'));
-  // Run once when param arrives
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPhoneParam]);
 
   // Track selected contact in a ref so the SSE handler always sees the latest value
   const selectedRef = useRef<Contact | null>(null);
