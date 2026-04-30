@@ -727,6 +727,8 @@ export default function InboxPage() {
     // Persist read watermark so badge stays 0 after page refresh (for already-read messages)
     readTimesRef.current[c.id] = Date.now();
     try { localStorage.setItem('readTimes', JSON.stringify(readTimesRef.current)); } catch { /**/ }
+    // Send WhatsApp read receipts so user sees blue ticks on their end
+    apiFetch('/api/messages/read', { method: 'POST', body: JSON.stringify({ contactId: c.id }) }).catch(() => {});
   }
 
   useEffect(() => {
