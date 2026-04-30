@@ -1030,31 +1030,52 @@ export default function InboxPage() {
                     { key: 'me'    as const, label: 'Intervened By Me' },
                     { key: 'any'   as const, label: 'Intervened By Any' },
                     { key: 'other' as const, label: 'Intervened By Other' },
-                  ]).map((opt) => (
-                    <button key={opt.key}
-                      onClick={() => { setIntervenedFilter(opt.key); setShowIntervenedFilter(false); }}
-                      className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center gap-2 ${intervenedFilter === opt.key ? 'text-orange-600 font-semibold bg-orange-50' : 'text-gray-700'}`}>
-                      {opt.label}
-                    </button>
-                  ))}
+                  ]).map((opt) => {
+                    const cnt = intervenedContacts.filter((c) => matchesIntervenedFilter(c, opt.key)).length;
+                    return (
+                      <button key={opt.key}
+                        onClick={() => { setIntervenedFilter(opt.key); setShowIntervenedFilter(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center justify-between gap-2 ${intervenedFilter === opt.key ? 'text-orange-600 font-semibold bg-orange-50' : 'text-gray-700'}`}>
+                        <span>{opt.label}</span>
+                        {cnt > 0 && (
+                          <span className={`text-xs font-bold rounded-full px-1.5 py-0.5 leading-none flex-shrink-0 ${intervenedFilter === opt.key ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-600'}`}>
+                            {cnt}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                   <div className="border-t border-gray-100 mt-1" />
                   {loadingFilterAgents ? (
                     <div className="flex items-center justify-center py-3">
                       <Loader2 size={14} className="animate-spin text-gray-400" />
                     </div>
-                  ) : filterAgents.map((a) => (
-                    <button key={a.id}
-                      onClick={() => { setIntervenedFilter(a.id); setShowIntervenedFilter(false); }}
-                      className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center gap-2 ${intervenedFilter === a.id ? 'text-orange-600 font-semibold bg-orange-50' : 'text-gray-700'}`}>
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${a.workspace_role === 'manager' ? 'bg-purple-500' : 'bg-blue-500'}`}>
-                        {a.name.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="truncate">Intervened By {a.name}</span>
-                      {a.workspace_role !== 'agent' && (
-                        <span className="ml-auto text-xs text-gray-400 capitalize">{a.workspace_role}</span>
-                      )}
-                    </button>
-                  ))}
+                  ) : filterAgents.map((a) => {
+                    const agentCount = intervenedContacts.filter((c) =>
+                      c.assigned_agent_id === a.id ||
+                      (!c.assigned_agent_id && c.intervened_by === a.name)
+                    ).length;
+                    return (
+                      <button key={a.id}
+                        onClick={() => { setIntervenedFilter(a.id); setShowIntervenedFilter(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center gap-2 ${intervenedFilter === a.id ? 'text-orange-600 font-semibold bg-orange-50' : 'text-gray-700'}`}>
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${a.workspace_role === 'manager' ? 'bg-purple-500' : 'bg-blue-500'}`}>
+                          {a.name.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="truncate">Intervened By {a.name}</span>
+                        <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                          {a.workspace_role !== 'agent' && (
+                            <span className="text-xs text-gray-400 capitalize">{a.workspace_role}</span>
+                          )}
+                          {agentCount > 0 && (
+                            <span className={`text-xs font-bold rounded-full px-1.5 py-0.5 leading-none ${intervenedFilter === a.id ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-600'}`}>
+                              {agentCount}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
