@@ -16,7 +16,21 @@ export async function GET(req: NextRequest) {
       'SELECT api_key FROM workspaces WHERE id = ? LIMIT 1',
       [payload.workspaceId]
     );
-    return apiSuccess({ api_key: rows[0]?.api_key || null });
+    let apiKey = rows[0]?.api_key as string | null;
+
+    // Auto-generate if column exists but key is not set yet
+    if (!apiKey) {
+      const newKey = 'ws_' + randomBytes(24).toString('hex');
+      try {
+        await execute('UPDATE workspaces SET api_key = ? WHERE id = ?', [newKey, payload.workspaceId]);
+        apiKey = newKey;
+      } catch {
+        // Column may not exist yet — return null, settings page will show migration hint
+        return apiSuccess({ api_key: null });
+      }
+    }
+
+    return apiSuccess({ api_key: apiKey });
   } catch (err: unknown) {
     if (err instanceof Error && err.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
     return apiError('Server error', 500);

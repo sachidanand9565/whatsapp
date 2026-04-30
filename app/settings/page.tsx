@@ -856,9 +856,26 @@ Body:
                 </div>
               </>
             ) : (
-              <p className="text-sm text-gray-400 text-center py-2">
-                Run the migration SQL to generate your API key, then refresh.
-              </p>
+              <div className="flex flex-col items-center gap-3 py-4">
+                <p className="text-sm text-gray-400 text-center">No API key yet.</p>
+                <button
+                  onClick={async () => {
+                    setRegenLoading(true);
+                    try {
+                      const r = await apiFetch('/api/workspace/api-key', { method: 'POST' });
+                      setApiKey(r.data?.api_key || '');
+                      toast.success('API key generated!');
+                    } catch { toast.error('Failed to generate'); }
+                    finally { setRegenLoading(false); }
+                  }}
+                  disabled={regenLoading}
+                  className="btn-primary flex items-center gap-2 text-sm">
+                  {regenLoading
+                    ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+                    : <><Key size={14} /> Generate API Key</>}
+                </button>
+               
+              </div>
             )}
           </div>
 
