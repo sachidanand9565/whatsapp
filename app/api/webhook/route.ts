@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { query, insert, execute } from '@/lib/db';
-import { parseWebhookBody, sendTextMessage } from '@/lib/whatsapp';
+import { parseWebhookBody, sendTextMessage, markAsRead } from '@/lib/whatsapp';
 import { normalizePhone, utcNow, unixToUtc } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 import { emitSSE } from '@/lib/sse';
@@ -55,14 +55,16 @@ export async function POST(req: NextRequest) {
   const { messages, statuses, phoneNumberId, profileNames } = parseWebhookBody(body);
 
   let workspaceId: number | null = null;
+  let workspaceAccessToken = '';
   let activeWebhooks: { url: string; secret: string | null }[] = [];
   if (phoneNumberId) {
     const ws = await query<RowDataPacket[]>(
-      'SELECT id FROM workspaces WHERE phone_number_id = ? AND is_active = 1 LIMIT 1',
+      'SELECT id, access_token FROM workspaces WHERE phone_number_id = ? AND is_active = 1 LIMIT 1',
       [phoneNumberId]
     );
     if (ws.length > 0) {
       workspaceId = ws[0].id as number;
+      workspaceAccessToken = ws[0].access_token as string || '';
       // Fetch all active custom webhooks for this workspace
       try {
         const hooks = await query<RowDataPacket[]>(
@@ -161,6 +163,11 @@ export async function POST(req: NextRequest) {
     
     // Notify connected inbox clients instantly via SSE
     emitSSE({ type: 'new_message', workspaceId, contactId, direction: 'inbound' });
+
+    // Auto read receipt — only when chatbot webhook is active (bot will reply, not a human agent)
+    if (activeWebhooks.length > 0 && workspaceAccessToken && phoneNumberId && msg.wamid) {
+      markAsRead(workspaceAccessToken, phoneNumberId, msg.wamid).catch(() => {});
+    }
 
     // ---- Forward to all active custom chatbot webhooks (non-blocking) ----
     if (activeWebhooks.length > 0) {
