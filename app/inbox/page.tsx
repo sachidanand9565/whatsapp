@@ -569,6 +569,14 @@ export default function InboxPage() {
     localStorage.setItem('unreadCounts', JSON.stringify(counts));
   };
 
+  // Timestamp of when each contact's chat was last opened (read watermark).
+  // Persisted across refreshes so badge stays 0 for messages already seen.
+  const readTimesRef = useRef<Record<number, number>>(
+    typeof window !== 'undefined'
+      ? (() => { try { return JSON.parse(localStorage.getItem('readTimes') || '{}'); } catch { return {}; } })()
+      : {}
+  );
+
   const loadContacts = useCallback(() => {
     setContactsLoading(true);
     apiFetch('/api/contacts?limit=200&chatStatus=inbox').then((r) => {
@@ -578,14 +586,19 @@ export default function InboxPage() {
         const next = { ...prev };
         list.forEach((c) => {
           if (selectedRef.current?.id === c.id) {
-            next[c.id] = 0; // Always 0 for the open chat
+            next[c.id] = 0; // Always 0 for the currently open chat
           } else {
-            const dbCount  = Number(c.unread_count) || 0;
-            const local    = prev[c.id] ?? 0;
-            // Use whichever is higher:
-            // - local > db  → chatbot reset the db count, keep local
-            // - db > local  → SSE was missed or page refresh, use db
-            next[c.id] = Math.max(local, dbCount);
+            const dbCount     = Number(c.unread_count) || 0;
+            const local       = prev[c.id] ?? 0;
+            const readTime    = readTimesRef.current[c.id] || 0;
+            const lastMsgTime = c.last_message_at ? toLocalDate(c.last_message_at).getTime() : 0;
+            // If no new message has arrived since we last opened this chat, keep badge 0.
+            // Otherwise fall back to Math.max so genuinely new messages are shown.
+            if (readTime > 0 && lastMsgTime <= readTime + 2000) {
+              next[c.id] = local; // local may be > 0 if SSE incremented it after we read
+            } else {
+              next[c.id] = Math.max(local, dbCount);
+            }
           }
         });
         saveUnread(next);
@@ -625,54 +638,69 @@ export default function InboxPage() {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
 
-    const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+    let es: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
 
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data) as {
-          type?: string;
-          contactId?: number;
-          direction?: string;
-          wamid?: string;
-          status?: string;
-          chatStatus?: string;
-        };
+    function connect() {
+      if (destroyed) return;
+      es = new EventSource(`/api/events?token=${encodeURIComponent(token!)}`);
 
-        if (data.type === 'new_message') {
-          loadContacts();
-          loadIntervenedContacts();
-          if (selectedRef.current?.id === data.contactId) {
-            loadMessages(data.contactId!);
-          } else if (data.contactId && data.direction === 'inbound') {
-            // Only increment badge for inbound — chatbot/agent outbound must NOT count
-            setUnreadCounts(prev => {
-              const next = { ...prev, [data.contactId!]: (prev[data.contactId!] || 0) + 1 };
-              saveUnread(next);
-              return next;
-            });
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data) as {
+            type?: string;
+            contactId?: number;
+            direction?: string;
+            wamid?: string;
+            status?: string;
+            chatStatus?: string;
+          };
+
+          if (data.type === 'new_message') {
+            loadContacts();
+            loadIntervenedContacts();
+            if (selectedRef.current?.id === data.contactId) {
+              loadMessages(data.contactId!);
+            } else if (data.contactId && data.direction === 'inbound') {
+              setUnreadCounts(prev => {
+                const next = { ...prev, [data.contactId!]: (prev[data.contactId!] || 0) + 1 };
+                saveUnread(next);
+                return next;
+              });
+            }
+          } else if (data.type === 'status_update' && data.contactId && data.wamid && data.status) {
+            if (selectedRef.current?.id === data.contactId) {
+              setMessages(prev => prev.map(m =>
+                m.wamid === data.wamid ? { ...m, status: data.status as Message['status'] } : m
+              ));
+            }
+          } else if (data.type === 'chat_status_update' && data.contactId && data.chatStatus) {
+            loadContacts();
+            loadIntervenedContacts();
+            if (selectedRef.current?.id === data.contactId) {
+              setSelected(prev => prev ? { ...prev, chat_status: data.chatStatus as Contact['chat_status'] } : prev);
+              loadMessages(data.contactId);
+            }
           }
-        } else if (data.type === 'status_update' && data.contactId && data.wamid && data.status) {
-          // Real-time tick update: ✓ sent → ✓✓ delivered → blue ✓✓ read
-          if (selectedRef.current?.id === data.contactId) {
-            setMessages(prev => prev.map(m =>
-              m.wamid === data.wamid ? { ...m, status: data.status as Message['status'] } : m
-            ));
-          }
-        } else if (data.type === 'chat_status_update' && data.contactId && data.chatStatus) {
-          // Real-time intervene / resolve / transfer — reload lists and update selected if open
-          loadContacts();
-          loadIntervenedContacts();
-          if (selectedRef.current?.id === data.contactId) {
-            setSelected(prev => prev ? { ...prev, chat_status: data.chatStatus as Contact['chat_status'] } : prev);
-            loadMessages(data.contactId);
-          }
-        }
-      } catch { /* ignore malformed frames */ }
+        } catch { /* ignore malformed frames */ }
+      };
+
+      // On error: close and reconnect after 3 s (don't permanently close)
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        if (!destroyed) retryTimer = setTimeout(connect, 3000);
+      };
+    }
+
+    connect();
+
+    return () => {
+      destroyed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      es?.close();
     };
-
-    es.onerror = () => es.close(); // browser will reconnect on its own after close
-
-    return () => es.close();
   }, [loadContacts, loadMessages, loadIntervenedContacts]);
 
   const loadTemplates = useCallback(() => {
@@ -696,6 +724,9 @@ export default function InboxPage() {
       saveUnread(next);
       return next;
     });
+    // Persist read watermark so badge stays 0 after page refresh (for already-read messages)
+    readTimesRef.current[c.id] = Date.now();
+    try { localStorage.setItem('readTimes', JSON.stringify(readTimesRef.current)); } catch { /**/ }
   }
 
   useEffect(() => {
@@ -780,9 +811,14 @@ export default function InboxPage() {
         method: 'PUT',
         body: JSON.stringify({ chat_status: 'intervened' }),
       });
-      const updated = { ...selected, chat_status: 'intervened' as const };
+      const updated = { ...selected, chat_status: 'intervened' as const, intervened_by: userName, assigned_agent_id: null as unknown as number };
       setSelected(updated);
       setContacts((prev) => prev.map((c) => c.id === selected.id ? updated : c));
+      // Keep intervenedContacts in sync for admin/manager tab
+      setIntervenedContacts((prev) => {
+        const exists = prev.some((c) => c.id === selected.id);
+        return exists ? prev.map((c) => c.id === selected.id ? updated : c) : [...prev, updated];
+      });
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       toast.error('Failed to intervene');
@@ -814,6 +850,8 @@ export default function InboxPage() {
       // Mark resolved locally — contact stays in "All" for 24h, then auto-moves to History
       const resolved = { ...selected, chat_status: 'resolved' as const };
       setContacts((prev) => prev.map((c) => c.id === selected.id ? resolved : c));
+      // Remove from intervened list immediately so tab updates without refresh
+      setIntervenedContacts((prev) => prev.filter((c) => c.id !== selected.id));
       setSelected(null);
       setMessages([]);
       toast.success('Chat resolved — visible in All for 24 hours, then moves to History');
@@ -880,6 +918,7 @@ export default function InboxPage() {
       });
       // Remove from current agent's view immediately
       setContacts((prev) => prev.filter((c) => c.id !== selected.id));
+      setIntervenedContacts((prev) => prev.filter((c) => c.id !== selected.id));
       setSelected(null);
       setMessages([]);
       toast.success(`Chat transferred to ${agent.name}`);
