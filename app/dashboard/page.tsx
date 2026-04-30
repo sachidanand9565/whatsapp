@@ -21,7 +21,7 @@ interface Workspace {
   verify_token: string;
 }
 
-interface Summary {
+interface Summary { 
   total_messages_sent: number;
   delivery_rate: number;
   read_rate: number;

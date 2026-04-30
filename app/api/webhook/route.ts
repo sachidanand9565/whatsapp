@@ -197,25 +197,27 @@ export async function POST(req: NextRequest) {
       failed:    "status = 'failed'",
     };
     const update = fieldMap[status.status];
-    if (update) {
-      await execute(`UPDATE messages SET ${update} WHERE wamid = ?`, [status.wamid]);
-    }
+    if (!update) continue;
 
-    // Update campaign_contacts status + campaign counters
-    if (status.status === 'delivered' || status.status === 'read' || status.status === 'failed') {
-      const col = `${status.status}_count`;
+    await execute(`UPDATE messages SET ${update} WHERE wamid = ?`, [status.wamid]);
 
-      // Find the message row to get campaign_id
-      const msgRows = await query<RowDataPacket[]>(
-        'SELECT id, campaign_id FROM messages WHERE wamid = ? LIMIT 1',
-        [status.wamid]
-      );
-      if (msgRows.length > 0 && msgRows[0].campaign_id) {
+    // Query message for contactId (SSE) + optional campaign processing
+    const msgRows = await query<RowDataPacket[]>(
+      'SELECT id, campaign_id, contact_id FROM messages WHERE wamid = ? LIMIT 1',
+      [status.wamid]
+    );
+    if (msgRows.length > 0) {
+      const contactId = msgRows[0].contact_id as number;
+
+      // Push real-time tick update to inbox (delivered ✓✓ / read blue ✓✓)
+      emitSSE({ type: 'status_update', workspaceId, contactId, wamid: status.wamid, status: status.status });
+
+      // Update campaign_contacts status + campaign counters
+      if (msgRows[0].campaign_id && (status.status === 'delivered' || status.status === 'read' || status.status === 'failed')) {
+        const col = `${status.status}_count`;
         const msgId  = msgRows[0].id as number;
         const campId = msgRows[0].campaign_id as number;
 
-        // Only update if status is actually changing (prevents duplicate webhook double-count)
-        // Status order: pending < sent < delivered < read
         const statusOrder: Record<string, number> = { pending: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
         const newOrder = statusOrder[status.status] ?? 0;
 
@@ -227,7 +229,6 @@ export async function POST(req: NextRequest) {
           [status.status, msgId, newOrder + 1]
         );
 
-        // Only increment campaign counter if row actually changed
         if (affected > 0) {
           await execute(
             `UPDATE campaigns SET ${col} = ${col} + 1 WHERE id = ?`,

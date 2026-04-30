@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { apiFetch } from '@/hooks/useApi';
-import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock, ArrowRightLeft, Zap, Plus, Trash2, Tag, Eye } from 'lucide-react';
+import MediaLibrary, { type MediaItem as MLItem } from '@/app/components/MediaLibrary';
+import { Send, Search, FileText, Image, FileVideo, File, ChevronDown, ChevronUp, Download, Music, MapPin, User, UserCheck, CheckCircle, Loader2, LayoutTemplate, X, Clock, ArrowRightLeft, Zap, Plus, Trash2, Tag, Eye, Paperclip, Maximize2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Contact, Message } from '@/types';
 
@@ -375,6 +376,9 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount, onContactUpd
   );
 }
 
+// ── Common emojis for picker ──────────────────────────────────
+const EMOJIS = ['😊','😂','🙏','👍','❤️','😍','🎉','👋','🤝','😅','🙂','😎','🔥','✅','⚡','💪','🌟','👌','🙌','😮','🎊','💯','🤔','😢','😃','✨','🎁','👏','💡','🫂'];
+
 // ── Template variable helpers ─────────────────────────────────
 function extractVarCount(body: string): number {
   const nums = (body?.match(/\{\{(\d+)\}\}/g) || []).map(m => parseInt(m.replace(/\{\{|\}\}/g, '')));
@@ -417,6 +421,9 @@ export default function InboxPage() {
   const [sendingTpl, setSendingTpl] = useState<number | null>(null);
   const [tplForParams, setTplForParams] = useState<{ id: number; name: string; language: string; body_text: string } | null>(null);
   const [tplParamVals, setTplParamVals] = useState<string[]>([]);
+  const [showEmoji, setShowEmoji]       = useState(false);
+  const inputRef                        = useRef<HTMLTextAreaElement>(null);
+  const emojiRef                        = useRef<HTMLDivElement>(null);
   const [showTransfer, setShowTransfer]     = useState(false);
   const [transferAgents, setTransferAgents] = useState<{ id: number; name: string; workspace_role: string }[]>([]);
   const [loadingAgents, setLoadingAgents]   = useState(false);
@@ -436,6 +443,75 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => { loadQuickReplies(); }, [loadQuickReplies]);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!showEmoji) return;
+    function h(e: MouseEvent) {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) setShowEmoji(false);
+    }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showEmoji]);
+
+  function applyFormat(marker: string) {
+    const ta = inputRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e, value: v } = ta;
+    const sel = v.slice(s, e);
+    const next = v.slice(0, s) + marker + sel + marker + v.slice(e);
+    setText(next);
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(s + marker.length, e + marker.length); }, 0);
+  }
+
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [showMediaLib, setShowMediaLib]     = useState(false);
+
+  async function handleMediaLibSelect(item: MLItem) {
+    if (!selected) return;
+    const mediaType = item.mime_type.startsWith('image/') ? 'image'
+      : item.mime_type.startsWith('video/') ? 'video'
+      : item.mime_type.startsWith('audio/') ? 'audio'
+      : 'document';
+    try {
+      await apiFetch('/api/send-message', {
+        method: 'POST',
+        body: JSON.stringify({ contactId: selected.id, type: mediaType, mediaId: item.media_id, filename: item.filename }),
+      });
+      toast.success('Media sent!');
+      loadMessages(selected.id);
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to send'); }
+  }
+
+  async function sendMediaFile(file: File) {
+    if (!selected) return;
+    setUploadingMedia(true);
+    const toastId = toast.loading(`Uploading ${file.name}…`);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const token = localStorage.getItem('token');
+      const upRes = await fetch('/api/media', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      const upData = await upRes.json();
+      if (!upRes.ok) throw new Error(upData.error || 'Upload failed');
+
+      const mediaType = file.type.startsWith('image/') ? 'image'
+        : file.type.startsWith('video/') ? 'video'
+        : file.type.startsWith('audio/') ? 'audio'
+        : 'document';
+
+      await apiFetch('/api/send-message', {
+        method: 'POST',
+        body: JSON.stringify({ contactId: selected.id, type: mediaType, mediaId: upData.data.mediaId, caption: '', filename: file.name }),
+      });
+      toast.success('Sent!', { id: toastId });
+      loadMessages(selected.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed', { id: toastId });
+    } finally {
+      setUploadingMedia(false);
+    }
+  }
 
   useEffect(() => {
     if (!showQR) return;
@@ -553,7 +629,15 @@ export default function InboxPage() {
 
     es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data) as { type?: string; contactId?: number; direction?: string };
+        const data = JSON.parse(e.data) as {
+          type?: string;
+          contactId?: number;
+          direction?: string;
+          wamid?: string;
+          status?: string;
+          chatStatus?: string;
+        };
+
         if (data.type === 'new_message') {
           loadContacts();
           loadIntervenedContacts();
@@ -566,6 +650,21 @@ export default function InboxPage() {
               saveUnread(next);
               return next;
             });
+          }
+        } else if (data.type === 'status_update' && data.contactId && data.wamid && data.status) {
+          // Real-time tick update: ✓ sent → ✓✓ delivered → blue ✓✓ read
+          if (selectedRef.current?.id === data.contactId) {
+            setMessages(prev => prev.map(m =>
+              m.wamid === data.wamid ? { ...m, status: data.status as Message['status'] } : m
+            ));
+          }
+        } else if (data.type === 'chat_status_update' && data.contactId && data.chatStatus) {
+          // Real-time intervene / resolve / transfer — reload lists and update selected if open
+          loadContacts();
+          loadIntervenedContacts();
+          if (selectedRef.current?.id === data.contactId) {
+            setSelected(prev => prev ? { ...prev, chat_status: data.chatStatus as Contact['chat_status'] } : prev);
+            loadMessages(data.contactId);
           }
         }
       } catch { /* ignore malformed frames */ }
@@ -1391,27 +1490,67 @@ export default function InboxPage() {
                   </div>
                 )}
 
-                <div className="p-3 flex gap-2 items-center">
-                  <input value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                    placeholder="Type a message..."
-                    className="input flex-1 text-sm" />
-                  {/* Quick Reply button */}
-                  <button onClick={() => setShowQR((v) => !v)}
-                    title="Quick Replies"
-                    className={`p-2.5 rounded-lg border transition-colors ${showQR ? 'border-yellow-300 bg-yellow-50 text-yellow-600' : 'border-gray-200 hover:bg-gray-50 text-gray-500'}`}>
-                    <Zap size={16} />
-                  </button>
-                  <button onClick={() => { loadTemplates(); setShowTemplates((v) => !v); }}
-                    title="Send template"
-                    className="p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 transition-colors">
-                    <LayoutTemplate size={16} />
-                  </button>
-                  <button onClick={sendMessage} disabled={sending || !text.trim()}
-                    className="btn-primary px-4 py-2.5 disabled:opacity-50">
-                    {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                  </button>
+                {/* Rich input */}
+                <div className="relative">
+                  {/* Emoji picker */}
+                  {showEmoji && (
+                    <div ref={emojiRef}
+                      className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-xl shadow-xl p-2 grid grid-cols-8 gap-0.5 z-30 w-64">
+                      {EMOJIS.map(em => (
+                        <button key={em} onClick={() => { setText(t => t + em); setShowEmoji(false); inputRef.current?.focus(); }}
+                          className="text-xl p-1 hover:bg-gray-100 rounded transition-colors">{em}</button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Textarea */}
+                  <div className="px-3 pt-2.5">
+                    <textarea
+                      ref={inputRef}
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                      placeholder='Type "/" for quick replies…'
+                      rows={2}
+                      className="w-full resize-none text-sm bg-transparent outline-none text-gray-800 placeholder-gray-400 leading-snug"
+                      style={{ maxHeight: 120 }}
+                    />
+                  </div>
+                  {/* Toolbar */}
+                  <div className="flex items-center justify-between px-3 pb-2.5">
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => applyFormat('*')} title="Bold"
+                        className="px-2 py-1 rounded hover:bg-gray-100 font-bold text-sm text-gray-600 transition-colors">B</button>
+                      <button onClick={() => applyFormat('_')} title="Italic"
+                        className="px-2 py-1 rounded hover:bg-gray-100 italic text-sm text-gray-600 transition-colors">I</button>
+                      <button onClick={() => applyFormat('~')} title="Strikethrough"
+                        className="px-2 py-1 rounded hover:bg-gray-100 line-through text-sm text-gray-600 transition-colors">S</button>
+                      <div className="w-px h-4 bg-gray-200 mx-1" />
+                      <button onClick={() => setShowEmoji(v => !v)} title="Emoji"
+                        className={`p-1.5 rounded text-base transition-colors ${showEmoji ? 'bg-yellow-50' : 'hover:bg-gray-100'}`}>😊</button>
+                      <button onClick={() => setShowMediaLib(true)} title="Media Library"
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors">
+                        <Image size={15} />
+                      </button>
+                      <label title="Upload & send file" className={`p-1.5 rounded hover:bg-gray-100 cursor-pointer transition-colors ${uploadingMedia ? 'text-gray-300 pointer-events-none' : 'text-gray-500'}`}>
+                        <Paperclip size={15} />
+                        <input type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) sendMediaFile(f); e.target.value = ''; }} />
+                      </label>
+                      <div className="w-px h-4 bg-gray-200 mx-1" />
+                      <button onClick={() => setShowQR(v => !v)} title="Quick Replies"
+                        className={`p-1.5 rounded transition-colors ${showQR ? 'bg-yellow-50 text-yellow-600' : 'hover:bg-gray-100 text-gray-500'}`}>
+                        <Zap size={15} />
+                      </button>
+                      <button onClick={() => { loadTemplates(); setShowTemplates(v => !v); }} title="Send Template"
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors">
+                        <LayoutTemplate size={15} />
+                      </button>
+                    </div>
+                    <button onClick={sendMessage} disabled={sending || !text.trim()}
+                      className="btn-primary px-4 py-1.5 text-sm flex items-center gap-1.5 disabled:opacity-50">
+                      {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -1480,6 +1619,14 @@ export default function InboxPage() {
             setSelected((prev) => prev ? { ...prev, ...updated } : prev);
             setContacts((prev) => prev.map((c) => c.id === selected.id ? { ...c, ...updated } : c));
           }}
+        />
+      )}
+
+      {/* Media Library modal */}
+      {showMediaLib && (
+        <MediaLibrary
+          onSelect={handleMediaLibSelect}
+          onClose={() => setShowMediaLib(false)}
         />
       )}
     </div>

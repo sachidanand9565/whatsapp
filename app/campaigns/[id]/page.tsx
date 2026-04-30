@@ -5,10 +5,11 @@ import { apiFetch } from '@/hooks/useApi';
 import {
   ArrowLeft, RefreshCw, Play, Radio, Zap, GitBranch, ShoppingBag,
   CheckCircle, Clock, XCircle, Send, Eye, Copy, X, Reply,
-  ChevronDown, Download, Tag, Ban, LayoutTemplate, AlertCircle,
+  ChevronDown, Download, Tag, Ban, LayoutTemplate, AlertCircle, Paperclip, Image as ImageIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import MediaLibrary, { type MediaItem as MLItem } from '@/app/components/MediaLibrary';
 
 // ── Types ─────────────────────────────────────────────────────
 interface CampaignDetail {
@@ -702,6 +703,8 @@ export default function CampaignDetailPage() {
   );
 }
 
+const DRAWER_EMOJIS = ['😊','😂','🙏','👍','❤️','😍','🎉','👋','🤝','😅','🙂','😎','🔥','✅','⚡','💪','🌟','👌','🙌','😮','🎊','💯','🤔','😢','😃','✨','🎁','👏','💡','🫂'];
+
 // ── Chat Drawer ────────────────────────────────────────────────
 interface DrawerMsg {
   id: number;
@@ -773,10 +776,80 @@ function ChatDrawer({ phone, name, onClose }: { phone: string; name: string; onC
   const [templates, setTemplates]     = useState<DrawerTemplate[]>([]);
   const [showTpl, setShowTpl]         = useState(false);
   const [loadingTpl, setLoadingTpl]   = useState(false);
-  const [sendingTpl, setSendingTpl]   = useState<number | null>(null);
+  const [sendingTpl, setSendingTpl]     = useState<number | null>(null);
   const [tplForParams, setTplForParams] = useState<DrawerTemplate | null>(null);
   const [tplParamVals, setTplParamVals] = useState<string[]>([]);
-  const bottomRef                   = useRef<HTMLDivElement>(null);
+  const [showEmoji, setShowEmoji]         = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [showMediaLib, setShowMediaLib]     = useState(false);
+  const bottomRef                           = useRef<HTMLDivElement>(null);
+  const inputRef                          = useRef<HTMLTextAreaElement>(null);
+  const emojiRef                          = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showEmoji) return;
+    function h(e: MouseEvent) {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) setShowEmoji(false);
+    }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showEmoji]);
+
+  function applyFormat(marker: string) {
+    const ta = inputRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e, value: v } = ta;
+    const sel = v.slice(s, e);
+    const next = v.slice(0, s) + marker + sel + marker + v.slice(e);
+    setText(next);
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(s + marker.length, e + marker.length); }, 0);
+  }
+
+  async function handleMediaLibSelect(item: MLItem) {
+    if (!contact) return;
+    const mediaType = item.mime_type.startsWith('image/') ? 'image'
+      : item.mime_type.startsWith('video/') ? 'video'
+      : item.mime_type.startsWith('audio/') ? 'audio'
+      : 'document';
+    try {
+      await apiFetch('/api/send-message', {
+        method: 'POST',
+        body: JSON.stringify({ contactId: contact.id, type: mediaType, mediaId: item.media_id, filename: item.filename }),
+      });
+      toast.success('Media sent!');
+      await loadMsgs(contact.id);
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to send'); }
+  }
+
+  async function sendMediaFile(file: File) {
+    if (!contact) return;
+    setUploadingMedia(true);
+    const tid = toast.loading(`Uploading ${file.name}…`);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const token = localStorage.getItem('token');
+      const up = await fetch('/api/media', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      const upData = await up.json();
+      if (!up.ok) throw new Error(upData.error || 'Upload failed');
+
+      const mediaType = file.type.startsWith('image/') ? 'image'
+        : file.type.startsWith('video/') ? 'video'
+        : file.type.startsWith('audio/') ? 'audio'
+        : 'document';
+
+      await apiFetch('/api/send-message', {
+        method: 'POST',
+        body: JSON.stringify({ contactId: contact.id, type: mediaType, mediaId: upData.data.mediaId, caption: '', filename: file.name }),
+      });
+      toast.success('Sent!', { id: tid });
+      await loadMsgs(contact.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed', { id: tid });
+    } finally {
+      setUploadingMedia(false);
+    }
+  }
 
   const loadMsgs = useCallback(async (contactId: number) => {
     const r = await apiFetch(`/api/messages?contactId=${contactId}&limit=80`);
@@ -862,6 +935,14 @@ function ChatDrawer({ phone, name, onClose }: { phone: string; name: string; onC
 
   return (
     <>
+      {/* Media Library (z-60 so it's above the drawer) */}
+      {showMediaLib && (
+        <MediaLibrary
+          onSelect={(item) => { handleMediaLibSelect(item); setShowMediaLib(false); }}
+          onClose={() => setShowMediaLib(false)}
+        />
+      )}
+
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
 
@@ -929,20 +1010,59 @@ function ChatDrawer({ phone, name, onClose }: { phone: string; name: string; onC
           {/* Input area — depends on 24hr window */}
           {!loading && (
             isWindowOpen ? (
-              /* Window OPEN → normal text input */
-              <div className="flex items-center gap-2 px-3 py-2.5 border-t bg-white shrink-0">
-                <input
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-                  placeholder="Type a message…"
-                  className="flex-1 input text-sm py-2"
-                  disabled={sending}
-                />
-                <button onClick={sendMsg} disabled={sending || !text.trim()}
-                  className="btn-primary p-2.5 disabled:opacity-50 shrink-0">
-                  {sending ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
-                </button>
+              /* Window OPEN → rich text input */
+              <div className="border-t bg-white shrink-0 relative">
+                {/* Emoji picker */}
+                {showEmoji && (
+                  <div ref={emojiRef}
+                    className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-xl shadow-xl p-2 grid grid-cols-8 gap-0.5 z-30 w-64">
+                    {DRAWER_EMOJIS.map(em => (
+                      <button key={em} onClick={() => { setText(t => t + em); setShowEmoji(false); inputRef.current?.focus(); }}
+                        className="text-xl p-1 hover:bg-gray-100 rounded transition-colors">{em}</button>
+                    ))}
+                  </div>
+                )}
+                {/* Textarea */}
+                <div className="px-3 pt-2.5">
+                  <textarea
+                    ref={inputRef}
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
+                    placeholder="Type a message…"
+                    rows={2}
+                    disabled={sending}
+                    className="w-full resize-none text-sm bg-transparent outline-none text-gray-800 placeholder-gray-400 leading-snug disabled:opacity-50"
+                    style={{ maxHeight: 110 }}
+                  />
+                </div>
+                {/* Toolbar */}
+                <div className="flex items-center justify-between px-3 pb-2.5">
+                  <div className="flex items-center gap-0.5">
+                    <button onClick={() => applyFormat('*')} title="Bold"
+                      className="px-2 py-1 rounded hover:bg-gray-100 font-bold text-sm text-gray-600 transition-colors">B</button>
+                    <button onClick={() => applyFormat('_')} title="Italic"
+                      className="px-2 py-1 rounded hover:bg-gray-100 italic text-sm text-gray-600 transition-colors">I</button>
+                    <button onClick={() => applyFormat('~')} title="Strikethrough"
+                      className="px-2 py-1 rounded hover:bg-gray-100 line-through text-sm text-gray-600 transition-colors">S</button>
+                    <div className="w-px h-4 bg-gray-200 mx-1" />
+                    <button onClick={() => setShowEmoji(v => !v)} title="Emoji"
+                      className={`p-1.5 rounded text-base transition-colors ${showEmoji ? 'bg-yellow-50' : 'hover:bg-gray-100'}`}>😊</button>
+                    <button onClick={() => setShowMediaLib(true)} title="Media Library"
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors">
+                      <ImageIcon size={15} />
+                    </button>
+                    <label title="Upload & send file" className={`p-1.5 rounded hover:bg-gray-100 cursor-pointer transition-colors ${uploadingMedia ? 'text-gray-300 pointer-events-none' : 'text-gray-500'}`}>
+                      <Paperclip size={15} />
+                      <input type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) sendMediaFile(f); e.target.value = ''; }} />
+                    </label>
+                  </div>
+                  <button onClick={sendMsg} disabled={sending || !text.trim()}
+                    className="btn-primary px-4 py-1.5 text-sm flex items-center gap-1.5 disabled:opacity-50">
+                    {sending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />} Send
+                  </button>
+                </div>
               </div>
             ) : (
               /* Window CLOSED → template only */

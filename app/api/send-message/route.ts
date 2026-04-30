@@ -5,7 +5,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { query, insert } from '@/lib/db';
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp';
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage } from '@/lib/whatsapp';
 import { apiSuccess, apiError, normalizePhone, utcNow } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   try {
     const payload = requireAuth(req);
     const body = await req.json();
-    const { contactId, type, text, templateName, language, components, templateParams } = body;
+    const { contactId, type, text, templateName, language, components, templateParams, mediaId, caption, filename } = body;
 
     if (!contactId) return apiError('contactId is required');
 
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     let content: string;
     let msgType: string;
 
+//  return type;
     if (type === 'template') {
       if (!templateName) return apiError('templateName required for template messages');
 
@@ -81,6 +82,14 @@ export async function POST(req: NextRequest) {
         buttons:        JSON.parse((tplRow?.buttons as string) || '[]'),
       });
       msgType = 'template';
+    } else if (['image', 'document', 'video', 'audio'].includes(type)) {
+      if (!mediaId) return apiError('mediaId required for media messages');
+      const mt = type as 'image' | 'document' | 'video' | 'audio';
+      
+      
+      result  = await sendMediaMessage(access_token as string, phone_number_id as string, phone, mt, mediaId as string, caption, filename);
+      content = JSON.stringify({ __type: 'media', media_id: mediaId, mime_type: mt, caption, filename, workspace_id: payload.workspaceId });
+      msgType = type;
     } else {
       if (!text) return apiError('text required');
       result  = await sendTextMessage(access_token as string, phone_number_id as string, phone, text);

@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/auth';
 import { query, execute, insert } from '@/lib/db';
 import { apiSuccess, apiError, utcNow } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
+import { emitSSE } from '@/lib/sse';
 
 type Params = { params: { id: string } };
 
@@ -62,6 +63,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
          VALUES (?, ?, 'outbound', 'system', ?, 'delivered', ?, ?)`,
         [payload.workspaceId, params.id, `Transferred to ${targetName} by ${actorName}`, t, t]
       );
+      emitSSE({ type: 'chat_status_update', workspaceId: payload.workspaceId, contactId: Number(params.id), chatStatus: 'intervened' });
       return apiSuccess({ updated: true });
     }
 
@@ -106,6 +108,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         );
       }
 
+      emitSSE({ type: 'chat_status_update', workspaceId: payload.workspaceId, contactId: Number(params.id), chatStatus: chat_status });
       return apiSuccess({ updated: true });
     }
 

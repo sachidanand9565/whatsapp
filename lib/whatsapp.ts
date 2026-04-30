@@ -78,6 +78,65 @@ export async function sendImageMessage(
   return data;
 }
 
+// ---- Send any media by media_id (image/document/video/audio) ----
+export async function sendMediaMessage(
+  accessToken:   string,
+  phoneNumberId: string,
+  to:            string,
+  mediaType:     'image' | 'document' | 'video' | 'audio',
+  mediaId:       string,
+  caption?:      string,
+  filename?:     string
+) {
+  const client = createWAClient(accessToken);
+  const payload: Record<string, unknown> = { id: mediaId };
+  if (caption)  payload.caption  = caption;
+  if (filename) payload.filename = filename;
+  const { data } = await client.post(`/${phoneNumberId}/messages`, {
+    messaging_product: 'whatsapp',
+    to,
+    type:        mediaType,
+    [mediaType]: payload,
+  });
+  return data;
+}
+
+// ---- Upload media file to WhatsApp and return media_id ----
+export async function uploadMedia(
+  accessToken:   string,
+  phoneNumberId: string,
+  fileBuffer:    Buffer,
+  mimeType:      string,
+  filename:      string
+): Promise<string> {
+  // Copy buffer into a fresh ArrayBuffer to avoid SharedArrayBuffer / pooled-Buffer issues
+  const ab   = new ArrayBuffer(fileBuffer.byteLength);
+  new Uint8Array(ab).set(fileBuffer);
+  const blob = new Blob([ab], { type: mimeType });
+
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimeType);
+  form.append('file', blob, filename);
+
+  const res = await fetch(`${BASE_URL}/${phoneNumberId}/media`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body:    form,
+  });
+
+  const text = await res.text();
+  let json: { id?: string; error?: { message: string; code?: number } };
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`WhatsApp upload error: ${text}`); }
+
+  if (!res.ok || json.error) {
+    throw new Error(`WhatsApp: ${json.error?.message || `HTTP ${res.status}`}`);
+  }
+  if (!json.id) throw new Error('No media_id returned from WhatsApp');
+  return json.id;
+}
+
 // ---- Mark message as read ----
 export async function markAsRead(
   accessToken:   string,
