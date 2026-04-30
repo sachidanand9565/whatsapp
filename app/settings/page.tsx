@@ -5,6 +5,7 @@ import {
   Save, Eye, EyeOff, Copy, CheckCircle, AlertTriangle,
   Webhook, RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight,
   Facebook, ChevronRight, X, Phone, Loader2, Key, RotateCcw, Zap,
+  MessageSquare, Image, FileText, Music, MapPin, MousePointerClick,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -213,6 +214,10 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey]   = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
 
+  // Payload preview
+  const [payloadTab, setPayloadTab] = useState<'text' | 'image' | 'audio' | 'document' | 'location' | 'button'>('text');
+  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
+
   const APP_ID    = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '';
   const CONFIG_ID = process.env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID || '';
   const BSP_READY = !!(APP_ID && CONFIG_ID);
@@ -262,6 +267,7 @@ export default function SettingsPage() {
           verify_token:    r.data.verify_token    || '',
         });
         setCredSource(r.data.credentials_source || 'none');
+        if (r.data.id) setWorkspaceId(r.data.id);
       }
     });
     loadHooks();
@@ -591,24 +597,77 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
-              <p className="font-semibold text-gray-700 mb-1.5">Payload your server will receive:</p>
-              <pre className="bg-gray-900 text-green-400 rounded p-2 overflow-x-auto leading-relaxed">{`{
+            {/* Dynamic payload preview */}
+            {(() => {
+              const wsId = workspaceId ?? 1;
+              const payloadTabs = [
+                { key: 'text',     label: 'Text',     icon: <MessageSquare size={11} /> },
+                { key: 'image',    label: 'Image',    icon: <Image size={11} /> },
+                { key: 'audio',    label: 'Audio',    icon: <Music size={11} /> },
+                { key: 'document', label: 'Document', icon: <FileText size={11} /> },
+                { key: 'location', label: 'Location', icon: <MapPin size={11} /> },
+                { key: 'button',   label: 'Button',   icon: <MousePointerClick size={11} /> },
+              ] as const;
+
+              const contentMap: Record<string, string> = {
+                text:     `"Hello! I need help."`,
+                image:    `"{\\"__type\\":\\"media\\",\\"media_id\\":\\"abc123\\",\\"mime_type\\":\\"image/jpeg\\",\\"caption\\":\\"Check this\\"}"`,
+                audio:    `"{\\"__type\\":\\"media\\",\\"media_id\\":\\"def456\\",\\"mime_type\\":\\"audio/ogg\\"}"`,
+                document: `"{\\"__type\\":\\"media\\",\\"media_id\\":\\"ghi789\\",\\"mime_type\\":\\"application/pdf\\",\\"filename\\":\\"invoice.pdf\\"}"`,
+                location: `"{\\"__type\\":\\"location\\",\\"latitude\\":28.6139,\\"longitude\\":77.2090,\\"name\\":\\"New Delhi\\"}"`,
+                button:   `"Buy Now"`,
+              };
+
+              const payload = `{
   "event": "message.received",
-  "workspace_id": 1,
+  "workspace_id": ${wsId},
   "contact": { "id": 42, "phone": "919876543210" },
   "message": {
-    "wamid": "wamid.xxx",
-    "type": "text",
-    "content": "Hello!",
-    "timestamp": "1700000000"
+    "wamid": "wamid.HBgMOTE5...",
+    "type": "${payloadTab}",
+    "content": ${contentMap[payloadTab]},
+    "timestamp": "${Math.floor(Date.now() / 1000)}",
+    "replied_to_wamid": null
   }
-}`}</pre>
-              <p className="text-gray-500 pt-2">
-                Reply: <code className="bg-gray-200 px-1 rounded">POST /api/send-message</code>
-                {' · '}Signature: <code className="bg-gray-200 px-1 rounded">X-Webhook-Signature: sha256=...</code>
-              </p>
-            </div>
+}`;
+
+              return (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-gray-700">Payload your server will receive:</p>
+                    <button
+                      onClick={() => copyToClipboard(payload)}
+                      className="flex items-center gap-1 text-gray-400 hover:text-whatsapp-teal transition-colors px-2 py-1 rounded-lg hover:bg-white"
+                      title="Copy payload">
+                      <Copy size={12} /> Copy
+                    </button>
+                  </div>
+
+                  {/* Message type tabs */}
+                  <div className="flex flex-wrap gap-1">
+                    {payloadTabs.map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setPayloadTab(t.key)}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                          payloadTab === t.key
+                            ? 'bg-whatsapp-green text-white'
+                            : 'bg-white border border-gray-200 text-gray-500 hover:border-whatsapp-green hover:text-whatsapp-teal'
+                        }`}>
+                        {t.icon}{t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <pre className="bg-gray-900 text-green-400 rounded p-2 overflow-x-auto leading-relaxed text-[11px]">{payload}</pre>
+
+                  <p className="text-gray-500">
+                    Reply: <code className="bg-gray-200 px-1 rounded">POST /api/send-message</code>
+                    {' · '}Signature: <code className="bg-gray-200 px-1 rounded">X-Webhook-Signature: sha256=...</code>
+                  </p>
+                </div>
+              );
+            })()}
 
             {hooks.length > 0 && (
               <div className="space-y-2">

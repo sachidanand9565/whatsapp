@@ -18,17 +18,22 @@ export async function GET(req: NextRequest) {
     const chatStatus = sp.get('chatStatus') || '';
 
     // Agents see:
-    //  1. Contacts directly assigned to them (via transfer)
-    //  2. Contacts from their campaigns that haven't been transferred to someone else
+    //  - If NO campaigns assigned → all inbox contacts (unassigned or assigned to them)
+    //  - If campaigns assigned → only their campaign contacts + directly assigned contacts
     const agentFilterMain  = payload.role === 'agent'
       ? `AND (
            c.assigned_agent_id = ${payload.userId}
            OR (
              c.assigned_agent_id IS NULL
-             AND c.id IN (
-               SELECT cc.contact_id FROM campaign_contacts cc
-               JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
-               WHERE ca.agent_id = ${payload.userId}
+             AND (
+               NOT EXISTS (
+                 SELECT 1 FROM campaign_assignments WHERE agent_id = ${payload.userId} LIMIT 1
+               )
+               OR c.id IN (
+                 SELECT cc.contact_id FROM campaign_contacts cc
+                 JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+                 WHERE ca.agent_id = ${payload.userId}
+               )
              )
            )
          )`
@@ -38,10 +43,15 @@ export async function GET(req: NextRequest) {
            assigned_agent_id = ${payload.userId}
            OR (
              assigned_agent_id IS NULL
-             AND id IN (
-               SELECT cc.contact_id FROM campaign_contacts cc
-               JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
-               WHERE ca.agent_id = ${payload.userId}
+             AND (
+               NOT EXISTS (
+                 SELECT 1 FROM campaign_assignments WHERE agent_id = ${payload.userId} LIMIT 1
+               )
+               OR id IN (
+                 SELECT cc.contact_id FROM campaign_contacts cc
+                 JOIN campaign_assignments ca ON ca.campaign_id = cc.campaign_id
+                 WHERE ca.agent_id = ${payload.userId}
+               )
              )
            )
          )`
