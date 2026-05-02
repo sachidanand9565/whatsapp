@@ -6,8 +6,9 @@ import { Toaster } from 'react-hot-toast';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title:       'WA SaaS — WhatsApp Business Platform',
-  description: 'Send campaigns, manage leads, automate replies on WhatsApp',
+  title: 'SK WEBTECH — WhatsApp Business Platform',
+  description: 'Innovate · Develop · Elevate — Send campaigns, manage leads, automate replies on WhatsApp',
+  icons: { icon: '/logo.svg' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

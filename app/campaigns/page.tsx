@@ -238,7 +238,7 @@ export default function CampaignsPage() {
                   <div className="mt-4">
                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-whatsapp-green rounded-full transition-all"
+                        className="h-full bg-blue-600 rounded-full transition-all"
                         style={{ width: `${Math.round(((ccSent(c) + ccFailed(c)) / c.total_contacts) * 100)}%` }}
                       />
                     </div>
@@ -332,9 +332,9 @@ function AssignAgentModal({ campaign, onClose }: { campaign: Campaign; onClose: 
                 return (
                   <div key={agent.id}
                     className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-colors ${
-                      isAssigned ? 'border-whatsapp-green bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                      isAssigned ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
                     }`}>
-                    <div className="w-9 h-9 rounded-full bg-whatsapp-teal text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
                       {agent.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -350,7 +350,7 @@ function AssignAgentModal({ campaign, onClose }: { campaign: Campaign; onClose: 
                       className={`ml-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                         isAssigned
                           ? 'bg-red-50 text-red-500 hover:bg-red-100'
-                          : 'bg-whatsapp-green text-white hover:bg-green-600'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
                       } disabled:opacity-50`}
                     >
                       {isSaving ? '…' : isAssigned ? 'Remove' : 'Assign'}
@@ -491,7 +491,7 @@ function CampaignModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
               {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
                 <label key={key} className={`flex items-start gap-2.5 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
                   form.campaign_type === key
-                    ? 'border-whatsapp-green bg-green-50'
+                    ? 'border-blue-600 bg-blue-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}>
                   <input type="radio" name="campaign_type" value={key}

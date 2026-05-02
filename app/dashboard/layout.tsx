@@ -1,11 +1,13 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   LayoutDashboard, MessageSquare, Users, Megaphone,
   FileText, Bot, BarChart3, Settings, LogOut, Menu, X,
   History, CreditCard, UserCog, ChevronRight, Plus, Check,
+  Headphones,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,6 +27,7 @@ const ALL_NAV = [
   { label: 'Agents',     href: '/agents',       icon: UserCog,         roles: ['admin'] },
   { label: 'Billing',    href: '/billing',      icon: CreditCard,      roles: ['admin'] },
   { label: 'Settings',   href: '/settings',     icon: Settings,        roles: ['admin'] },
+  { label: 'Support',    href: '/support',      icon: Headphones,      roles: ['admin','manager','agent'] },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +37,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [role, setRole]         = useState<Role>('admin');
   const [userName, setUserName] = useState('');
 
-  // Project switcher state
   const [workspaces, setWorkspaces]         = useState<Workspace[]>([]);
   const [currentWs, setCurrentWs]           = useState<Workspace | null>(null);
   const [showSwitcher, setShowSwitcher]     = useState(false);
@@ -53,7 +55,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setRole(r);
     setUserName(localStorage.getItem('userName') || '');
 
-    // Load workspaces from localStorage (set at login)
     const stored = localStorage.getItem('workspaces');
     const wsId   = Number(localStorage.getItem('workspaceId'));
     if (stored) {
@@ -61,7 +62,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setWorkspaces(list);
       setCurrentWs(list.find((w) => w.id === wsId) || list[0] || null);
     } else {
-      // Fallback: fetch from API
       fetch('/api/workspaces', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
         .then((r) => r.json())
         .then((res) => {
@@ -74,7 +74,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [router]);
 
-  // Close switcher when clicking outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
@@ -127,7 +126,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       toast.success(`Project "${newWs.name}" created!`);
       setShowNewModal(false);
       setNewProjectName('');
-      // Auto-switch to new project
       switchWorkspace(newWs);
     } finally {
       setCreating(false);
@@ -147,23 +145,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   const roleBadgeColor: Record<Role, string> = {
-    admin:   'bg-purple-500',
-    manager: 'bg-blue-500',
-    agent:   'bg-green-500',
+    admin:   'bg-purple-600',
+    manager: 'bg-blue-600',
+    agent:   'bg-sky-600',
   };
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-16 bg-whatsapp-dark text-white flex flex-col
+        fixed inset-y-0 left-0 z-50 w-16 bg-[#0a1628] text-white flex flex-col
         transform transition-transform duration-200
         ${open ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0 lg:static lg:inset-auto
       `}>
         {/* Logo */}
-        <div className="flex items-center justify-center py-4 border-b border-white/10">
-          <span className="text-xl">💬</span>
+        <div className="flex items-center justify-center py-3 border-b border-white/10">
+          <Image src="/logo.svg" alt="SK WEBTECH" width={40} height={40} className="rounded" />
           <button className="absolute right-2 lg:hidden" onClick={() => setOpen(false)}>
             <X size={16} />
           </button>
@@ -176,7 +174,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             title={currentWs?.name || 'Projects'}
             className="flex flex-col items-center gap-1 group"
           >
-            <div className="w-8 h-8 rounded-lg bg-whatsapp-teal flex items-center justify-center text-white font-bold text-sm group-hover:opacity-80 transition-opacity">
+            <div className="w-8 h-8 rounded-lg bg-blue-700 flex items-center justify-center text-white font-bold text-sm group-hover:opacity-80 transition-opacity">
               {currentWs ? currentWs.name.charAt(0).toUpperCase() : '?'}
             </div>
             <span className="text-[8px] text-white/60 leading-none max-w-[48px] truncate">
@@ -184,7 +182,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </span>
           </button>
 
-          {/* Dropdown panel */}
           {showSwitcher && (
             <div className="absolute left-full ml-2 top-0 z-50 w-56 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden">
               <p className="text-[10px] font-semibold text-gray-400 uppercase px-3 pt-3 pb-1 tracking-wider">Your Projects</p>
@@ -194,16 +191,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <button
                       onClick={() => switchWorkspace(ws)}
                       disabled={switching}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${ws.id === currentWs?.id ? 'bg-green-50' : ''}`}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${ws.id === currentWs?.id ? 'bg-blue-50' : ''}`}
                     >
-                      <div className="w-7 h-7 rounded-md bg-whatsapp-teal flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                      <div className="w-7 h-7 rounded-md bg-blue-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                         {ws.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{ws.name}</p>
                         {ws.plan && <p className="text-[10px] text-gray-400 truncate">{ws.plan}</p>}
                       </div>
-                      {ws.id === currentWs?.id && <Check size={14} className="text-whatsapp-teal flex-shrink-0" />}
+                      {ws.id === currentWs?.id && <Check size={14} className="text-blue-600 flex-shrink-0" />}
                       {ws.id !== currentWs?.id && <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />}
                     </button>
                   </li>
@@ -212,7 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="border-t border-gray-100">
                 <button
                   onClick={() => { setShowSwitcher(false); setShowNewModal(true); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-whatsapp-teal font-medium hover:bg-green-50 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-blue-600 font-medium hover:bg-blue-50 transition-colors"
                 >
                   <Plus size={16} />
                   New Project
@@ -223,7 +220,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-2 overflow-y-auto scrollbar-hide" style={{scrollbarWidth:'none'}}>
+        <nav className="flex-1 py-2 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
           {nav.map(({ label, href, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + '/');
             return (
@@ -231,7 +228,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={href} href={href}
                 onClick={() => setOpen(false)}
                 className={`flex flex-col items-center justify-center py-2.5 gap-1 transition-colors
-                  ${active ? 'bg-white/10 text-white' : 'text-white/70 hover:text-white hover:bg-white/5'}`}
+                  ${active
+                    ? 'bg-blue-600/20 text-blue-300 border-r-2 border-blue-400'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
               >
                 <Icon size={18} />
                 <span className="text-[9px] font-medium leading-none">{label}</span>
@@ -243,7 +243,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Logout */}
         <div className="flex items-center justify-center py-4 border-t border-white/10">
           <button onClick={logout}
-            className="flex flex-col items-center gap-1 text-white/70 hover:text-white transition-colors">
+            className="flex flex-col items-center gap-1 text-white/60 hover:text-red-400 transition-colors">
             <LogOut size={18} />
             <span className="text-[9px] font-medium leading-none">Logout</span>
           </button>
@@ -271,7 +271,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               value={newProjectName}
               onChange={(e) => setNewProjectName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && createProject()}
-              placeholder="e.g. RO Care India"
+              placeholder="e.g. My Business"
               className="input w-full mb-4"
               autoFocus
             />

@@ -128,7 +128,7 @@ export default function DashboardPage() {
           {/* API Status card */}
           <div className={`rounded-xl border p-5 ${
             isConnected
-              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+              ? 'bg-gradient-to-r from-blue-50 to-sky-50 border-blue-200'
               : 'bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200'
           }`}>
             <div className="flex flex-wrap gap-6 items-start">
@@ -137,7 +137,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-xs text-gray-500 font-medium mb-1">WhatsApp Business API</p>
                 <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold ${
-                  isConnected ? 'bg-green-500 text-white' : 'bg-orange-400 text-white'
+                  isConnected ? 'bg-blue-600 text-white' : 'bg-orange-400 text-white'
                 }`}>
                   <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
                   {isConnected ? 'LIVE' : 'NOT CONNECTED'}
@@ -249,7 +249,7 @@ export default function DashboardPage() {
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                <BarChart3 size={16} className="text-whatsapp-teal" /> Messages — Last 7 Days
+                <BarChart3 size={16} className="text-blue-600" /> Messages — Last 7 Days
               </h2>
               <button onClick={() => apiFetch('/api/analytics').then((r) => r?.data && setChartData(r.data.charts.daily_messages))}
                 className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -265,8 +265,8 @@ export default function DashboardPage() {
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip />
-                  <Bar dataKey="sent"     name="Sent"     fill="#25D366" radius={[4,4,0,0]} />
-                  <Bar dataKey="received" name="Received" fill="#128C7E" radius={[4,4,0,0]} />
+                  <Bar dataKey="sent"     name="Sent"     fill="#2563EB" radius={[4,4,0,0]} />
+                  <Bar dataKey="received" name="Received" fill="#0ea5e9" radius={[4,4,0,0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -285,10 +285,10 @@ export default function DashboardPage() {
                   <item.icon size={18} className={item.color} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm group-hover:text-whatsapp-teal transition-colors">{item.title}</p>
+                  <p className="font-semibold text-gray-900 text-sm group-hover:text-blue-600 transition-colors">{item.title}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{item.desc}</p>
                 </div>
-                <ChevronRight size={16} className="text-gray-300 group-hover:text-whatsapp-teal transition-colors flex-shrink-0" />
+                <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-600 transition-colors flex-shrink-0" />
               </Link>
             ))}
           </div>
@@ -300,7 +300,7 @@ export default function DashboardPage() {
           {/* ── Profile Card ── */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Green header */}
-            <div className="bg-gradient-to-br from-whatsapp-dark to-whatsapp-teal px-4 py-4 flex items-start justify-between">
+            <div className="bg-gradient-to-br from-blue-900 to-blue-700 px-4 py-4 flex items-start justify-between">
               <div>
                 <p className="text-white font-bold text-base leading-tight">
                   {wsLoading ? '—' : (workspace?.name || 'My Business')}
@@ -316,7 +316,7 @@ export default function DashboardPage() {
             <div className="px-4 py-4 space-y-3">
               {/* Avatar + LIVE badge */}
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-whatsapp-teal/10 border border-whatsapp-teal/20 flex items-center justify-center text-whatsapp-teal font-bold text-lg flex-shrink-0">
+                <div className="w-11 h-11 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 font-bold text-lg flex-shrink-0">
                   {workspace?.name?.charAt(0)?.toUpperCase() || '?'}
                 </div>
                 <div>
@@ -344,7 +344,7 @@ export default function DashboardPage() {
 
               {/* Settings link */}
               <Link href="/settings"
-                className="flex items-center gap-1.5 text-xs text-whatsapp-teal font-medium hover:underline">
+                className="flex items-center gap-1.5 text-xs text-blue-600 font-medium hover:underline">
                 View Settings <ChevronRight size={12} />
               </Link>
             </div>
@@ -370,7 +370,7 @@ export default function DashboardPage() {
           <div className="card space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Current Plan</p>
-              <Link href="/billing" className="text-xs text-whatsapp-teal font-semibold hover:underline">
+              <Link href="/billing" className="text-xs text-blue-600 font-semibold hover:underline">
                 View Billing
               </Link>
             </div>
@@ -379,7 +379,7 @@ export default function DashboardPage() {
                 {plan}
               </p>
               <Link href="/billing"
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-whatsapp-green text-white hover:bg-whatsapp-teal transition-colors">
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">
                 Upgrade
               </Link>
             </div>

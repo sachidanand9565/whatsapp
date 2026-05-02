@@ -335,7 +335,7 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount, onContactUpd
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addTag()}
                 placeholder="Add tag..."
-                className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-whatsapp-green"
+                className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <button onClick={addTag} disabled={!tagInput.trim() || savingTags}
                 className="px-2.5 py-1.5 bg-whatsapp-green text-white rounded-lg text-xs disabled:opacity-40">
@@ -360,7 +360,7 @@ function ProfilePanel({ contact, templateMsgCount, sessionMsgCount, onContactUpd
               onChange={(e) => setNotesVal(e.target.value)}
               rows={3}
               placeholder="Write internal notes about this contact..."
-              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-whatsapp-green resize-none"
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
             />
             <button
               onClick={saveNotes}
@@ -917,8 +917,8 @@ export default function InboxPage() {
     const el = document.getElementById(`msg-${wamid}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-whatsapp-green', 'ring-offset-1', 'rounded-xl');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-whatsapp-green', 'ring-offset-1', 'rounded-xl'), 1500);
+      el.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'rounded-xl');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'rounded-xl'), 1500);
     }
   }
 
@@ -974,7 +974,7 @@ export default function InboxPage() {
               t === 'requested' ? (
                 <span className="flex items-center gap-1">
                   Requested
-                  {requestedCount > 0 && <span className="bg-whatsapp-green text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{requestedCount}</span>}
+                  {requestedCount > 0 && <span className="bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{requestedCount}</span>}
                 </span>
               ) : (
                 <span className="flex items-center gap-1">
@@ -985,7 +985,7 @@ export default function InboxPage() {
             return (
               <button key={t} onClick={() => setTab(t)}
                 className={`flex-1 py-2 text-xs font-semibold transition-colors flex items-center justify-center gap-1 ${
-                  tab === t ? 'border-b-2 border-whatsapp-green text-whatsapp-teal' : 'text-gray-400'}`}>
+                  tab === t ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400'}`}>
                 {label}
               </button>
             );
@@ -1143,7 +1143,7 @@ export default function InboxPage() {
             return (
               <button key={c.id} onClick={() => selectContact(c)}
                 className={`w-full text-left px-3 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors flex items-center gap-3
-                  ${selected?.id === c.id ? 'bg-green-50 border-l-2 border-l-whatsapp-green' : ''}
+                  ${selected?.id === c.id ? 'bg-green-50 border-l-2 border-l-blue-600' : ''}
                   ${isResolved ? 'opacity-60' : ''}`}>
                 <div className={`w-10 h-10 rounded-full ${color} text-white flex items-center justify-center font-bold text-sm flex-shrink-0`}>
                   {initial}
@@ -1168,7 +1168,7 @@ export default function InboxPage() {
                           : `+${c.phone}`}
                     </p>
                     {unread > 0 && !isResolved && (
-                      <span className="flex-shrink-0 bg-whatsapp-green text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                      <span className="flex-shrink-0 bg-blue-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
                         {unread > 99 ? '99+' : unread}
                       </span>
                     )}
@@ -1185,7 +1185,7 @@ export default function InboxPage() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Chat header */}
           <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-3 bg-white">
-            <div className="w-9 h-9 rounded-full bg-whatsapp-green text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+            <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
               {(selected.name || selected.phone).charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
@@ -1337,8 +1337,8 @@ export default function InboxPage() {
                         return (
                           <button
                             onClick={() => quotedMsg?.wamid && scrollToReplied(quotedMsg.wamid)}
-                            className="w-full text-left bg-black/10 border-l-4 border-whatsapp-green px-3 py-2 hover:bg-black/15 transition-colors">
-                            <p className="text-whatsapp-teal font-semibold text-xs flex items-center gap-1 mb-0.5">
+                            className="w-full text-left bg-black/10 border-l-4 border-blue-400 px-3 py-2 hover:bg-black/15 transition-colors">
+                            <p className="text-blue-500 font-semibold text-xs flex items-center gap-1 mb-0.5">
                               ↩ Replied to this message
                             </p>
                             <p className="text-gray-600 text-xs truncate">
@@ -1490,7 +1490,7 @@ export default function InboxPage() {
                       </p>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setShowQRManage((v) => !v)}
-                          className="text-xs text-whatsapp-teal font-medium hover:underline">
+                          className="text-xs text-blue-600 font-medium hover:underline">
                           {showQRManage ? 'Done' : 'Manage'}
                         </button>
                         <button onClick={() => setShowQR(false)} className="text-gray-400 hover:text-gray-600">
@@ -1623,7 +1623,7 @@ export default function InboxPage() {
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex flex-col items-center gap-2">
               <p className="text-xs text-gray-400">Chat resolved — moves to History in 24 hrs</p>
               <button onClick={intervene} disabled={actioning}
-                className="flex items-center gap-2 px-6 py-2.5 bg-whatsapp-green hover:bg-green-600 text-white font-semibold rounded-full text-sm transition-colors disabled:opacity-50 shadow-sm">
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-full text-sm transition-colors disabled:opacity-50 shadow-sm">
                 {actioning ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
                 Intervene Again
               </button>
@@ -1631,7 +1631,7 @@ export default function InboxPage() {
           ) : (
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-center">
               <button onClick={intervene} disabled={actioning}
-                className="flex items-center gap-2 px-6 py-2.5 bg-whatsapp-green hover:bg-green-600 text-white font-semibold rounded-full text-sm transition-colors disabled:opacity-50 shadow-sm">
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-full text-sm transition-colors disabled:opacity-50 shadow-sm">
                 {actioning ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
                 Intervene
               </button>
@@ -1642,7 +1642,7 @@ export default function InboxPage() {
         <div className="flex-1 flex items-center justify-center text-gray-400 bg-gray-50">
           {contactsLoading ? (
             <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 border-4 border-whatsapp-green border-t-transparent rounded-full animate-spin" />
+              <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
               <p className="text-sm text-gray-400">Loading conversations…</p>
             </div>
           ) : (
