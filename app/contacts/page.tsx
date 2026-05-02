@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { Contact } from '@/types';
 
 const STATUS_COLORS: Record<string, string> = {
-  new:       'bg-blue-100 text-blue-700',
+  new:       'bg-green-100 text-green-700',
   contacted: 'bg-yellow-100 text-yellow-700',
   converted: 'bg-green-100 text-green-700',
   lost:      'bg-red-100 text-red-700',
@@ -130,7 +130,7 @@ export default function ContactsPage() {
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {(Array.isArray(c.tags) ? c.tags : []).map((t: string) => (
-                        <span key={t} className="badge bg-blue-100 text-blue-700 flex items-center gap-1">
+                        <span key={t} className="badge bg-green-100 text-green-700 flex items-center gap-1">
                           <Tag size={10} />{t}
                         </span>
                       ))}

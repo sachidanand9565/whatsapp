@@ -146,22 +146,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const roleBadgeColor: Record<Role, string> = {
     admin:   'bg-purple-600',
-    manager: 'bg-blue-600',
-    agent:   'bg-sky-600',
+    manager: 'bg-green-600',
+    agent:   'bg-green-500',
   };
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-16 bg-[#0a1628] text-white flex flex-col
+        fixed inset-y-0 left-0 z-50 w-16 bg-[#071a0a] text-white flex flex-col
         transform transition-transform duration-200
         ${open ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0 lg:static lg:inset-auto
       `}>
         {/* Logo */}
         <div className="flex items-center justify-center py-3 border-b border-white/10">
-          <Image src="/logo.svg" alt="SK WEBTECH" width={40} height={40} className="rounded" />
+          <Image src="/logo.png" alt="SK WEBTECH" width={44} height={44} className="h-12 w-auto" />
           <button className="absolute right-2 lg:hidden" onClick={() => setOpen(false)}>
             <X size={16} />
           </button>
@@ -174,7 +174,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             title={currentWs?.name || 'Projects'}
             className="flex flex-col items-center gap-1 group"
           >
-            <div className="w-8 h-8 rounded-lg bg-blue-700 flex items-center justify-center text-white font-bold text-sm group-hover:opacity-80 transition-opacity">
+            <div className="w-8 h-8 rounded-lg bg-green-700 flex items-center justify-center text-white font-bold text-sm group-hover:opacity-80 transition-opacity">
               {currentWs ? currentWs.name.charAt(0).toUpperCase() : '?'}
             </div>
             <span className="text-[8px] text-white/60 leading-none max-w-[48px] truncate">
@@ -191,16 +191,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <button
                       onClick={() => switchWorkspace(ws)}
                       disabled={switching}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${ws.id === currentWs?.id ? 'bg-blue-50' : ''}`}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${ws.id === currentWs?.id ? 'bg-green-50' : ''}`}
                     >
-                      <div className="w-7 h-7 rounded-md bg-blue-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                      <div className="w-7 h-7 rounded-md bg-green-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                         {ws.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{ws.name}</p>
                         {ws.plan && <p className="text-[10px] text-gray-400 truncate">{ws.plan}</p>}
                       </div>
-                      {ws.id === currentWs?.id && <Check size={14} className="text-blue-600 flex-shrink-0" />}
+                      {ws.id === currentWs?.id && <Check size={14} className="text-green-600 flex-shrink-0" />}
                       {ws.id !== currentWs?.id && <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />}
                     </button>
                   </li>
@@ -209,7 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="border-t border-gray-100">
                 <button
                   onClick={() => { setShowSwitcher(false); setShowNewModal(true); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-blue-600 font-medium hover:bg-blue-50 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-green-600 font-medium hover:bg-green-50 transition-colors"
                 >
                   <Plus size={16} />
                   New Project
@@ -229,7 +229,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 onClick={() => setOpen(false)}
                 className={`flex flex-col items-center justify-center py-2.5 gap-1 transition-colors
                   ${active
-                    ? 'bg-blue-600/20 text-blue-300 border-r-2 border-blue-400'
+                    ? 'bg-green-600/20 text-green-300 border-r-2 border-green-400'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                   }`}
               >

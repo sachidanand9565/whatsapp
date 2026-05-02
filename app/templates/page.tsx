@@ -200,11 +200,11 @@ export default function TemplatesPage() {
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors
                 ${activeTab === tab.key
-                  ? 'border-blue-600 text-blue-700 bg-blue-50'
+                  ? 'border-green-600 text-green-700 bg-green-50'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
               {tab.label}
               <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
-                ${activeTab === tab.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                ${activeTab === tab.key ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
                 {counts[tab.key as keyof typeof counts]}
               </span>
             </button>
@@ -214,7 +214,7 @@ export default function TemplatesPage() {
         {/* Table */}
         {loading ? (
           <div className="flex justify-center py-16">
-            <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+            <div className="animate-spin w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
@@ -347,7 +347,7 @@ export default function TemplatesPage() {
                           <button
                             onClick={() => setPreviewTpl(t)}
                             title="Preview"
-                            className="inline-flex items-center gap-1 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg transition-colors">
+                            className="inline-flex items-center gap-1 text-xs font-medium bg-green-600 hover:bg-green-700 text-white px-2.5 py-1.5 rounded-lg transition-colors">
                             <Eye size={13} /> Preview
                           </button>
                           <button
@@ -506,9 +506,9 @@ function TemplatePreviewModal({ template: t, onClose }: { template: Template; on
                   <div key={i}
                     className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold shadow-sm cursor-pointer hover:opacity-90 transition-opacity
                       ${btn.type === 'QUICK_REPLY'
-                        ? 'bg-white text-blue-600'
+                        ? 'bg-white text-green-600'
                         : btn.type === 'URL'
-                        ? 'bg-white text-blue-600'
+                        ? 'bg-white text-green-600'
                         : 'bg-white text-green-600'}`}>
                     {btn.type === 'URL'          && <Link2  size={14} />}
                     {btn.type === 'PHONE_NUMBER' && <Phone  size={14} />}
@@ -687,7 +687,7 @@ function TemplateModal({
                   { value: 'AUTHENTICATION', emoji: '🔐', label: 'Authentication', desc: 'OTP, login codes' },
                 ].map((c) => (
                   <label key={c.value} className={`border-2 rounded-xl p-3 cursor-pointer transition-all
-                    ${form.category === c.value ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    ${form.category === c.value ? 'border-green-600 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
                     <input type="radio" name="category" value={c.value}
                       checked={form.category === c.value}
                       onChange={() => setForm({ ...form, category: c.value })} className="sr-only" />
@@ -708,7 +708,7 @@ function TemplateModal({
                     onClick={() => setForm({ ...form, header_type: opt.value as TemplateForm['header_type'], header_content: '' })}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all
                       ${form.header_type === opt.value
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-green-600 text-white border-blue-600'
                         : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
                     {opt.icon} {opt.label}
                   </button>
@@ -817,7 +817,7 @@ function TemplateModal({
                           <button key={ut} type="button"
                             onClick={() => updateButton(i, { url_type: ut as 'static' | 'dynamic' })}
                             className={`flex-1 text-xs py-1.5 rounded-lg border font-medium transition-all
-                              ${btn.url_type === ut ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                              ${btn.url_type === ut ? 'bg-green-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>
                             {ut === 'static' ? 'Static URL' : 'Dynamic URL'}
                           </button>
                         ))}
@@ -839,7 +839,7 @@ function TemplateModal({
                   <MessageSquare size={13} /> + Quick Reply
                 </button>
                 <button type="button" onClick={() => addCTA('URL')}
-                  className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border-2 border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 font-medium">
+                  className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border-2 border-dashed border-blue-300 text-green-600 hover:bg-blue-50 font-medium">
                   <Link2 size={13} /> + Visit Website
                 </button>
                 <button type="button" onClick={() => addCTA('PHONE_NUMBER')}
@@ -890,7 +890,7 @@ function TemplateModal({
                 <div className="mt-1 space-y-1">
                   {buttons.map((b, i) => (
                     <div key={i} className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold shadow-sm bg-white
-                      ${b.type === 'QUICK_REPLY' ? 'text-blue-600' : b.type === 'URL' ? 'text-blue-600' : 'text-green-600'}`}>
+                      ${b.type === 'QUICK_REPLY' ? 'text-green-600' : b.type === 'URL' ? 'text-green-600' : 'text-green-600'}`}>
                       {b.type === 'URL' && <Link2 size={11} />}
                       {b.type === 'PHONE_NUMBER' && <Phone size={11} />}
                       {b.type === 'QUICK_REPLY'  && <MessageSquare size={11} />}

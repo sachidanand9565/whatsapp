@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'SK WEBTECH — WhatsApp Business Platform',
   description: 'Innovate · Develop · Elevate — Send campaigns, manage leads, automate replies on WhatsApp',
-  icons: { icon: '/logo.svg' },
+  icons: { icon: '/logo.png' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
