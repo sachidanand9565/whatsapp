@@ -20,6 +20,7 @@ const TIER_MAP: Record<string, string> = {
   TIER_50:        '50 / day',
   TIER_250:       '250 / day',
   TIER_1K:        '1,000 / day',
+  TIER_2K:        '2,000 / day',
   TIER_10K:       '10,000 / day',
   TIER_100K:      '100,000 / day',
   TIER_UNLIMITED: 'Unlimited',
@@ -94,8 +95,9 @@ export async function GET(req: NextRequest) {
         },
       },
     });
-  } catch (err) {
-    if (err instanceof Error && err.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
-    return apiError('Server error', 500);
+  } catch (err: any) {
+    if (err?.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
+    console.error('[workspace/status]', err?.message, err?.code);
+    return apiError(err?.message || 'Server error', 500);
   }
 }

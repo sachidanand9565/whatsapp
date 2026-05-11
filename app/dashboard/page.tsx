@@ -165,13 +165,20 @@ export default function DashboardPage() {
 
                   {/* Messaging Quota — real from Meta */}
                   <div>
-                    <p className="text-xs text-gray-500 font-medium mb-1">Messaging Quota</p>
+                    <p className="text-xs text-gray-500 font-medium mb-1">Messaging Limit</p>
                     {statusLoading ? (
                       <div className="h-5 w-20 bg-gray-200 animate-pulse rounded" />
+                    ) : waStatus?.quota ? (
+                      <p className="text-sm font-bold text-gray-800">{waStatus.quota}</p>
                     ) : (
-                      <p className="text-sm font-bold text-gray-800">
-                        {waStatus?.quota ?? '—'}
-                      </p>
+                      <a
+                        href="https://business.facebook.com/wa/manage/phone-numbers/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-500 hover:underline font-medium"
+                      >
+                        View in Meta →
+                      </a>
                     )}
                   </div>
 

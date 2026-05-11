@@ -138,8 +138,24 @@ export async function POST(req: NextRequest) {
     } else if (msg.type === 'contacts') {
       const list = msg.contacts as Record<string, unknown>[] | undefined;
       content = JSON.stringify({ __type: 'contacts', contacts: list });
-    } else if (msg.type === 'interactive') content = '📋 Interactive reply';
-    else content = msg.type;
+    } else if (msg.type === 'interactive') {
+      const d = msg.interactive as Record<string, unknown> | undefined;
+      const btnReply = (d?.button_reply as any)?.title;
+      const listReply = (d?.list_reply as any)?.title;
+      content = btnReply || listReply || '📋 Interactive reply';
+    } else if (msg.type === 'reaction') {
+      const d = (msg as any).reaction as Record<string, unknown> | undefined;
+      content = `Reacted ${d?.emoji || '👍'} to a message`;
+    } else if (msg.type === 'order') {
+      content = '🛒 Order received';
+    } else if (msg.type === 'system') {
+      const d = (msg as any).system as Record<string, unknown> | undefined;
+      content = (d?.body as string) || 'System message';
+    } else if (msg.type === 'unknown' || msg.type === 'unsupported') {
+      content = '⚠️ Unsupported message type (voice note, poll, etc.)';
+    } else {
+      content = `[${msg.type}]`;
+    }
 
     // Store message (try with replied_to_wamid, fallback without)
     const msgSentAt = unixToUtc(msg.timestamp);

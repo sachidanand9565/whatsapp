@@ -37,8 +37,10 @@ export async function GET(req: NextRequest) {
     let end: number;
     let label: string;
 
+    // Meta conversation analytics available from Dec 1, 2025 onwards only
+    const META_MIN_UNIX = 1764633600; // Dec 1, 2025 UTC
+
     if (startDate && endDate) {
-      // Use UTC midnight so the date range is correct regardless of server timezone
       start = Math.floor(new Date(startDate + 'T00:00:00Z').getTime() / 1000);
       end   = Math.floor(new Date(endDate   + 'T23:59:59Z').getTime() / 1000);
       label = startDate === endDate ? startDate : `${startDate} to ${endDate}`;
@@ -48,6 +50,9 @@ export async function GET(req: NextRequest) {
       end   = Math.floor(Date.UTC(year, month, 0, 23, 59, 59) / 1000);
       label = monthParam;
     }
+
+    // Clamp start to Meta's minimum allowed date
+    if (start < META_MIN_UNIX) start = META_MIN_UNIX;
 
     const rows = await query<RowDataPacket[]>(
       `SELECT waba_id, access_token, phone_number_id FROM workspaces WHERE id = ?`,
@@ -78,23 +83,18 @@ export async function GET(req: NextRequest) {
     }
     const convUrl = `https://graph.facebook.com/${GV}/${waba_id}/conversation_analytics?${convParams}`;
 
-    // 2. Message analytics (real-time sent/delivered/read)
-    const msgUrl = phone_number_id
-      ? `https://graph.facebook.com/${GV}/${phone_number_id}/analytics?${new URLSearchParams({
-          start:       String(start),
-          end:         String(end),
-          granularity: 'DAY',
-          access_token,
-        })}`
-      : null;
+    // 2. Message analytics — WABA fields syntax (only working approach)
+    const msgUrl = `https://graph.facebook.com/${GV}/${waba_id}?` +
+      `fields=analytics.start(${start}).end(${end}).granularity(DAY){data_points{start,end,sent,delivered}}&access_token=${access_token}`;
 
     const [convRes, msgRes] = await Promise.all([
-      fetch(convUrl).then(r => r.json()).catch((e) => { console.error('[billing] conv fetch error:', e); return { data: [] }; }),
-      msgUrl ? fetch(msgUrl).then(r => r.json()).catch((e) => { console.error('[billing] msg fetch error:', e); return null; }) : Promise.resolve(null),
+      fetch(convUrl).then(r => r.json()).catch((e) => { console.error('[billing] conv fetch error:', e); return {}; }),
+      fetch(msgUrl).then(r => r.json()).catch((e) => { console.error('[billing] msg fetch error:', e); return {}; }),
     ]);
 
-    console.log('[billing] conv response:', JSON.stringify(convRes).slice(0, 400));
-    console.log('[billing] msg  response:', JSON.stringify(msgRes).slice(0, 400));
+    console.log('[billing] conv response:', JSON.stringify(convRes).slice(0, 600));
+    console.log('[billing] msg  response:', JSON.stringify(msgRes).slice(0, 600));
+    console.log('[billing] conv_data_array length:', Array.isArray(convRes?.conversation_analytics?.data) ? convRes.conversation_analytics.data.length : 'N/A');
 
     // Surface Meta API errors to the client so they're visible
     if (convRes?.error) {
@@ -121,8 +121,11 @@ export async function GET(req: NextRequest) {
     let totalConversations = 0;
     let totalCost = 0;
 
-    if (!convRes.error && Array.isArray(convRes.data)) {
-      const points: ConvDataPoint[] = convRes.data.flatMap(
+    // Meta returns { data: [...] } directly for conversation_analytics
+    const convDataArray = convRes?.data ?? convRes?.conversation_analytics?.data ?? [];
+
+    if (!convRes.error && Array.isArray(convDataArray)) {
+      const points: ConvDataPoint[] = convDataArray.flatMap(
         (d: { data_points?: ConvDataPoint[]; conversation_category?: string }) =>
           (d.data_points || []).map((dp: ConvDataPoint) => ({
             ...dp,
@@ -134,7 +137,7 @@ export async function GET(req: NextRequest) {
         const date = new Date(dp.start * 1000).toISOString().slice(0, 10);
         const cat  = (dp.conversation_category || 'SERVICE').toUpperCase();
         const cnt  = dp.conversation || 0;
-        const cost = dp.cost || 0;
+        const cost = parseFloat(String(dp.cost || 0));
 
         if (!byDay[date]) byDay[date] = { date, marketing: 0, utility: 0, authentication: 0, service: 0, cost: 0, sent: 0, delivered: 0, read: 0 };
 
@@ -153,6 +156,7 @@ export async function GET(req: NextRequest) {
     // ── Parse message analytics ───────────────────────────────────────────
     let totalSent = 0, totalDelivered = 0, totalRead = 0;
 
+    // WABA fields syntax returns { analytics: { data_points: [...] } }
     const msgPoints: MsgDataPoint[] = msgRes?.analytics?.data_points || [];
     for (const mp of msgPoints) {
       const date = new Date(mp.start * 1000).toISOString().slice(0, 10);

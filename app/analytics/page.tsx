@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/hooks/useApi';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
 
@@ -18,6 +18,16 @@ interface Summary {
   converted_leads:         number;
   messages_failed:         number;
 }
+
+interface MetaSummary {
+  total_sent:          number;
+  total_delivered:     number;
+  delivery_rate:       number;
+  total_conversations: number;
+  total_cost_usd:      number;
+}
+interface MetaMsgPoint  { date: string; sent: number; delivered: number; }
+interface MetaConvPoint { date: string; conversations: number; cost: number; }
 
 const COLORS = ['#25D366', '#128C7E', '#FFB300', '#EF4444'];
 
@@ -39,6 +49,13 @@ export default function AnalyticsPage() {
   const [startDate, setStartDate] = useState(() => daysAgoStr(29));
   const [endDate,   setEndDate]   = useState(() => todayStr());
 
+  // Meta analytics state
+  const [metaSummary,  setMetaSummary]  = useState<MetaSummary | null>(null);
+  const [metaMsg,      setMetaMsg]      = useState<MetaMsgPoint[]>([]);
+  const [metaConv,     setMetaConv]     = useState<MetaConvPoint[]>([]);
+  const [metaLoading,  setMetaLoading]  = useState(false);
+  const [metaError,    setMetaError]    = useState('');
+
   useEffect(() => {
     if (!startDate || !endDate) return;
     setLoading(true);
@@ -48,6 +65,20 @@ export default function AnalyticsPage() {
         setDaily(r.data.charts.daily_messages);
       }
     }).finally(() => setLoading(false));
+
+    // Fetch Meta analytics in parallel
+    setMetaLoading(true);
+    setMetaError('');
+    apiFetch(`/api/analytics/meta?start_date=${startDate}&end_date=${endDate}`).then((r) => {
+      if (r?.data) {
+        setMetaSummary(r.data.summary);
+        setMetaMsg(r.data.messaging);
+        setMetaConv(r.data.conversations);
+      } else if (r?.error) {
+        setMetaError(r.error);
+      }
+    }).catch(() => setMetaError('Meta API error'))
+      .finally(() => setMetaLoading(false));
   }, [startDate, endDate]);
 
   if (loading) return (
@@ -156,6 +187,91 @@ export default function AnalyticsPage() {
             </ResponsiveContainer>
           )}
         </div>
+      </div>
+
+      {/* ── Meta WhatsApp Analytics Section ─────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-bold text-gray-900">Meta WhatsApp Analytics</h2>
+          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Official API</span>
+        </div>
+
+        {metaLoading && (
+          <div className="card flex items-center justify-center h-32">
+            <div className="animate-spin w-6 h-6 border-4 border-whatsapp-green border-t-transparent rounded-full" />
+          </div>
+        )}
+
+        {!metaLoading && metaError && (
+          <div className="card bg-yellow-50 border border-yellow-200">
+            <p className="text-sm text-yellow-800 font-medium">Meta Analytics unavailable</p>
+            <p className="text-xs text-yellow-600 mt-1">{metaError}</p>
+            <p className="text-xs text-gray-500 mt-2">Make sure your WABA ID and Access Token are set in Settings.</p>
+          </div>
+        )}
+
+        {!metaLoading && metaSummary && (
+          <>
+            {/* Meta KPI cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Sent (Meta)',         value: metaSummary.total_sent.toLocaleString(),          color: 'text-green-600' },
+                { label: 'Delivered (Meta)',     value: metaSummary.total_delivered.toLocaleString(),     color: 'text-blue-600'  },
+                { label: 'Delivery Rate',        value: `${metaSummary.delivery_rate}%`,                  color: 'text-purple-600'},
+                { label: 'Conversations',        value: metaSummary.total_conversations.toLocaleString(), color: 'text-orange-600'},
+                { label: 'Total Cost (USD)',     value: `$${metaSummary.total_cost_usd}`,                 color: 'text-red-600'   },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="card">
+                  <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                  <p className="text-sm text-gray-600 mt-1">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Sent vs Delivered chart */}
+              <div className="card">
+                <h3 className="font-semibold text-gray-900 mb-4">Sent vs Delivered (Meta)</h3>
+                {metaMsg.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-8">No data for this period</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={metaMsg}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="sent"      name="Sent"      fill="#25D366" radius={[4,4,0,0]} />
+                      <Bar dataKey="delivered" name="Delivered" fill="#128C7E" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              {/* Conversations chart */}
+              <div className="card">
+                <h3 className="font-semibold text-gray-900 mb-4">Conversations (Meta)</h3>
+                {metaConv.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-8">No data for this period</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={metaConv}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis yAxisId="left"  tick={{ fontSize: 11 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Legend />
+                      <Line yAxisId="left"  type="monotone" dataKey="conversations" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Conversations" />
+                      <Line yAxisId="right" type="monotone" dataKey="cost"          stroke="#ef4444" strokeWidth={2} dot={false} name="Cost (USD)" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
