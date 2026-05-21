@@ -10,7 +10,7 @@
  */
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { queryOne } from '@/lib/db';
+import { query } from '@/lib/db';
 import { apiSuccess, apiError } from '@/lib/utils';
 import { createWAClient } from '@/lib/whatsapp';
 import { RowDataPacket } from 'mysql2';
@@ -34,10 +34,11 @@ export async function GET(req: NextRequest) {
     const wid     = payload.workspaceId;
 
     // Get workspace credentials
-    const ws = await queryOne<RowDataPacket>(
+    const rows = await query<RowDataPacket[]>(
       'SELECT waba_id, access_token FROM workspaces WHERE id = ?',
       [wid]
     );
+    const ws = rows[0] ?? null;
 
     if (!ws?.waba_id || !ws?.access_token) {
       return apiError('WhatsApp not connected. Please set up your WABA credentials in Settings.', 400);
