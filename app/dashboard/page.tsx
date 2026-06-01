@@ -98,7 +98,7 @@ export default function DashboardPage() {
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white/95 backdrop-blur-md border border-slate-205 p-3 rounded-xl shadow-xl">
+        <div className="bg-white/95 backdrop-blur-md border border-slate-200 p-3 rounded-xl shadow-xl">
           <p className="text-xs font-bold text-slate-800 mb-1">{label}</p>
           <p className="text-xs font-semibold text-emerald-600">Sent: {payload[0].value}</p>
           <p className="text-xs font-semibold text-cyan-600">Received: {payload[1].value}</p>
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                 {isConnected ? (
                   <div className="flex flex-col items-end gap-1.5">
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Connection Status</span>
-                    <span className="bg-emerald-50 border border-emerald-150 text-emerald-600 text-xs font-extrabold px-3 py-1.5 rounded-xl flex items-center gap-1.5 glow-emerald-sm">
+                    <span className="bg-emerald-50 border border-emerald-200 text-emerald-600 text-xs font-extrabold px-3 py-1.5 rounded-xl flex items-center gap-1.5 glow-emerald-sm">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
                       SECURE LIVE
                     </span>
@@ -249,14 +249,14 @@ export default function DashboardPage() {
 
             {/* Verification / error panels */}
             {waStatus?.api_error && (
-              <div className="mt-4 bg-amber-50 border border-amber-205 rounded-xl px-4 py-3 text-xs text-amber-700 flex items-center gap-2">
+              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700 flex items-center gap-2">
                 <span className="text-base shrink-0">⚠️</span>
                 <p><strong>Meta Alert:</strong> {waStatus.api_error}</p>
               </div>
             )}
 
             {waStatus?.name_declined && (
-              <div className="mt-4 bg-rose-50 border border-rose-150 rounded-xl px-4 py-3 text-xs text-rose-700 flex items-start gap-2.5">
+              <div className="mt-4 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-xs text-rose-700 flex items-start gap-2.5">
                 <span className="text-base shrink-0">⚠️</span>
                 <div>
                   <strong>Display name verification declined by Meta:</strong>
@@ -276,21 +276,21 @@ export default function DashboardPage() {
           ) : summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: 'Messages Sent',    value: summary.total_messages_sent, icon: MessageSquare, color: 'text-emerald-600 border-emerald-200 bg-emerald-50' },
-                { label: 'Total Contacts',   value: summary.total_contacts,       icon: Users,         color: 'text-violet-600 border-violet-200 bg-violet-50' },
-                { label: 'Delivery Rate',    value: `${summary.delivery_rate}%`,  icon: CheckCircle,   color: 'text-cyan-600 border-cyan-200 bg-cyan-50' },
-                { label: 'Active Campaigns', value: summary.active_campaigns,     icon: Megaphone,     color: 'text-amber-600 border-amber-200 bg-amber-50' },
+                { label: 'Messages Sent',    value: summary.total_messages_sent, icon: MessageSquare, color: 'text-emerald-600 border-emerald-100 bg-emerald-50' },
+                { label: 'Total Contacts',   value: summary.total_contacts,       icon: Users,         color: 'text-violet-600 border-violet-100 bg-violet-50' },
+                { label: 'Delivery Rate',    value: `${summary.delivery_rate}%`,  icon: CheckCircle,   color: 'text-cyan-600 border-cyan-100 bg-cyan-50' },
+                { label: 'Active Campaigns', value: summary.active_campaigns,     icon: Megaphone,     color: 'text-amber-600 border-amber-100 bg-amber-50' },
               ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className="glass-card glass-card-hover flex flex-col justify-between p-4.5 bg-white/70 border-slate-200/50 shadow-md shadow-slate-100/50 group relative overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</span>
-                    <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${color}`}>
-                      <Icon size={15} />
-                    </div>
+                <div key={label} className="glass-card glass-card-hover flex items-center gap-4 p-5 bg-white/70 border-slate-200/50 shadow-md shadow-slate-100/50 group relative overflow-hidden">
+                  <div className={`w-12 h-12 rounded-xl border flex items-center justify-center shrink-0 ${color} transition-transform group-hover:scale-105`}>
+                    <Icon size={20} />
                   </div>
-                  <p className="text-2xl font-black text-slate-800 mt-4 tracking-tight leading-none group-hover:scale-105 transition-transform origin-left">
-                    {value}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">{label}</p>
+                    <p className="text-2xl font-black text-slate-800 mt-2 tracking-tight leading-none">
+                      {value}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -360,7 +360,7 @@ export default function DashboardPage() {
               { title: 'Interactive Flow',   href: '/flows',     icon: Zap,       desc: 'Build visual chat execution',    color: 'text-cyan-600 bg-cyan-50 border-cyan-100' },
             ].map((item) => (
               <Link key={item.href} href={item.href}
-                className="glass-card glass-card-hover bg-white/70 border-slate-200/50 shadow-md shadow-slate-100/50 flex items-center justify-between p-4.5 group cursor-pointer">
+                className="glass-card glass-card-hover bg-white/70 border-slate-200/50 shadow-md shadow-slate-100/50 flex items-center justify-between p-5 group cursor-pointer">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${item.color}`}>
                     <item.icon size={16} />
@@ -370,7 +370,7 @@ export default function DashboardPage() {
                     <p className="text-[10px] text-slate-400 font-bold mt-0.5 leading-snug truncate">{item.desc}</p>
                   </div>
                 </div>
-                <ChevronRight size={16} className="text-slate-400 group-hover:text-emerald-650 group-hover:translate-x-0.5 transition-all shrink-0" />
+                <ChevronRight size={16} className="text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0" />
               </Link>
             ))}
           </div>
@@ -381,7 +381,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
 
           {/* Premium Account Profile Card */}
-          <div className="glass-card bg-white border-slate-205 shadow-lg shadow-slate-100/50 overflow-hidden relative group">
+          <div className="glass-card bg-white border-slate-200 shadow-lg shadow-slate-100/50 overflow-hidden relative group">
             {/* Lush Dark Gradient Banner */}
             <div className="bg-gradient-to-br from-[#0c2f1e] via-[#051c11] to-[#081e13] px-5 py-5 border-b border-white/5 relative">
               <div className="absolute top-2 right-2">
@@ -442,7 +442,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Current Plan Card */}
-          <div className="glass-card bg-white border-slate-205 shadow-md p-5 space-y-4">
+          <div className="glass-card bg-white border-slate-200 shadow-md p-5 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Workspace Plan</span>
               <Link href="/billing" className="text-xs text-emerald-600 font-bold hover:underline">
@@ -458,7 +458,7 @@ export default function DashboardPage() {
                 </p>
               </div>
               <Link href="/billing"
-                className="flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-lg bg-emerald-650 hover:bg-emerald-600 text-white transition-all shadow-sm">
+                className="flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-sm">
                 <Zap size={11} /> Upgrade
               </Link>
             </div>
@@ -466,7 +466,7 @@ export default function DashboardPage() {
 
           {/* Real-time Performance Sidebar */}
           {summary && (
-            <div className="glass-card bg-white border-slate-205 shadow-md p-5 space-y-4">
+            <div className="glass-card bg-white border-slate-200 shadow-md p-5 space-y-4">
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Response Performance</span>
                 <p className="text-[11px] text-slate-400 font-bold mt-0.5">Engagement index metrics</p>
@@ -481,7 +481,7 @@ export default function DashboardPage() {
                 ].map(({ label, value, icon: Icon, color }) => (
                   <div key={label} className="flex items-center justify-between border-b border-slate-100 pb-2.5 last:border-0 last:pb-0">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
                         <Icon size={12} />
                       </div>
                       <span className="text-xs text-slate-500 font-bold truncate">{label}</span>

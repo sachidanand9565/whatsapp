@@ -188,7 +188,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {showSwitcher && (
             <div className="absolute left-full ml-3 top-0 z-50 w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.15)] border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-left-2 duration-200">
-              <p className="text-[10px] font-bold text-slate-450 uppercase px-4 pt-4 pb-2 tracking-wider">Your Projects</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase px-4 pt-4 pb-2 tracking-wider">Your Projects</p>
               <ul className="max-h-60 overflow-y-auto px-2 pb-2 space-y-1">
                 {workspaces.map((ws) => (
                   <li key={ws.id}>
@@ -305,7 +305,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {role}
               </span>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-250 flex items-center justify-center font-bold text-xs">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center justify-center font-bold text-xs">
                   {userName.charAt(0).toUpperCase()}
                 </div>
                 <span className="text-sm font-semibold text-slate-700 hidden sm:block">{userName}</span>
