@@ -216,6 +216,107 @@ export async function resumeFlow(
   const contact = contacts[0] as { name?: string; phone: string };
 
   // Handlers for active node types that pause for input
+  if (currentNode.type === 'message') {
+    const buttons = currentNode.data.buttons || [];
+    if (buttons.length > 0) {
+      const clickedBtnIndex = buttons.findIndex((b: any) =>
+        String(b.text).toLowerCase().trim() === String(replyText).toLowerCase().trim()
+      );
+
+      let edges: FlowEdge[] = [];
+      try {
+        edges = typeof flow.edges === 'string' ? JSON.parse(flow.edges) : flow.edges || [];
+      } catch {
+        edges = [];
+      }
+
+      if (clickedBtnIndex === -1) {
+        // Did not click any of the buttons, resend the same message node to present options again.
+        await logNodeExecution(session.id, flow.id, contactId, currentNode.id, currentNode.type, replyText, 'No matching button clicked, resending options', 'error');
+        await executeFlowStep(session, flow, null, phoneNumberId, accessToken);
+        return true;
+      }
+
+      const targetHandle = `btn-${clickedBtnIndex}`;
+      const nextEdge = edges.find(e => e.source === currentNode.id && e.sourceHandle === targetHandle);
+
+      if (!nextEdge) {
+        // Completed flow (button clicked but no edge connection drawn)
+        await execute('UPDATE flow_sessions SET status = "completed", completed_at = ? WHERE id = ?', [utcNow(), session.id]);
+        await execute('UPDATE flows SET completed_count = completed_count + 1 WHERE id = ?', [flow.id]);
+        await logNodeExecution(session.id, flow.id, contactId, 'end_session', 'system', replyText, 'Flow finished (no branch connected to clicked button)', 'success');
+        return true;
+      }
+
+      // Found a matching branch! Update session current node
+      session.current_node_id = nextEdge.target;
+      session.variables = variables;
+      await execute(
+        'UPDATE flow_sessions SET current_node_id = ?, resume_at = NULL WHERE id = ?',
+        [nextEdge.target, session.id]
+      );
+
+      await logNodeExecution(session.id, flow.id, contactId, currentNode.id, currentNode.type, replyText, `Selected button "${replyText}" -> branching to ${nextEdge.target}`, 'success');
+      await executeFlowStep(session, flow, null, phoneNumberId, accessToken);
+      return true;
+    }
+  }
+
+  if (currentNode.type === 'list_message') {
+    const rawSections = currentNode.data.sections || [];
+    let matchedSIdx = -1;
+    let matchedRIdx = -1;
+
+    for (let sIdx = 0; sIdx < rawSections.length; sIdx++) {
+      const rows = rawSections[sIdx].rows || [];
+      for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+        if (String(rows[rIdx].title).toLowerCase().trim() === String(replyText).toLowerCase().trim()) {
+          matchedSIdx = sIdx;
+          matchedRIdx = rIdx;
+          break;
+        }
+      }
+      if (matchedSIdx !== -1) break;
+    }
+
+    let edges: FlowEdge[] = [];
+    try {
+      edges = typeof flow.edges === 'string' ? JSON.parse(flow.edges) : flow.edges || [];
+    } catch {
+      edges = [];
+    }
+
+    if (matchedSIdx === -1) {
+      // Did not click/select any of the list options, resend the same list message to present options again.
+      await logNodeExecution(session.id, flow.id, contactId, currentNode.id, currentNode.type, replyText, 'No matching list option selected, resending options', 'error');
+      await executeFlowStep(session, flow, null, phoneNumberId, accessToken);
+      return true;
+    }
+
+    const targetHandle = `list-${matchedSIdx}-${matchedRIdx}`;
+    const nextEdge = edges.find(e => e.source === currentNode.id && e.sourceHandle === targetHandle);
+
+    if (!nextEdge) {
+      // Completed flow (item selected but no edge connection drawn)
+      await execute('UPDATE flow_sessions SET status = "completed", completed_at = ? WHERE id = ?', [utcNow(), session.id]);
+      await execute('UPDATE flows SET completed_count = completed_count + 1 WHERE id = ?', [flow.id]);
+      await logNodeExecution(session.id, flow.id, contactId, 'end_session', 'system', replyText, 'Flow finished (no branch connected to selected list option)', 'success');
+      return true;
+    }
+
+    // Found a matching branch! Update session current node
+    session.current_node_id = nextEdge.target;
+    session.variables = variables;
+    await execute(
+      'UPDATE flow_sessions SET current_node_id = ?, resume_at = NULL WHERE id = ?',
+      [nextEdge.target, session.id]
+    );
+
+    await logNodeExecution(session.id, flow.id, contactId, currentNode.id, currentNode.type, replyText, `Selected list item "${replyText}" -> branching to ${nextEdge.target}`, 'success');
+    await executeFlowStep(session, flow, null, phoneNumberId, accessToken);
+    return true;
+  }
+
   if (currentNode.type === 'ask_question') {
     const valType = currentNode.data.validation || 'any';
     const isValid = validateInput(replyText, valType);
@@ -361,6 +462,15 @@ export async function executeFlowStep(
               [workspaceId, contactId, wamid, btnContent, t, t]
             );
             emitSSE({ type: 'new_message', workspaceId, contactId, direction: 'outbound' });
+
+            await logNodeExecution(session.id, flow.id, contactId, node.id, node.type, null, `Sent message with buttons. Pausing session for reply.`, 'success');
+            
+            // Pause session at this node to wait for user to click button
+            await execute(
+              'UPDATE flow_sessions SET current_node_id = ?, resume_at = NULL WHERE id = ?',
+              [node.id, session.id]
+            );
+            pauseExecution = true;
           } else {
             const res = await sendTextMessage(accessToken, phoneNumberId, contact.phone, bodyText);
             const wamid = res?.messages?.[0]?.id;
@@ -371,11 +481,11 @@ export async function executeFlowStep(
               [workspaceId, contactId, wamid, bodyText, t, t]
             );
             emitSSE({ type: 'new_message', workspaceId, contactId, direction: 'outbound' });
-          }
 
-          await logNodeExecution(session.id, flow.id, contactId, node.id, node.type, null, `Sent message: ${bodyText.slice(0, 100)}`, 'success');
-          const edge = edges.find(e => e.source === node.id);
-          nextNodeId = edge ? edge.target : null;
+            await logNodeExecution(session.id, flow.id, contactId, node.id, node.type, null, `Sent message: ${bodyText.slice(0, 100)}`, 'success');
+            const edge = edges.find(e => e.source === node.id);
+            nextNodeId = edge ? edge.target : null;
+          }
           break;
         }
 
@@ -428,8 +538,19 @@ export async function executeFlowStep(
           emitSSE({ type: 'new_message', workspaceId, contactId, direction: 'outbound' });
 
           await logNodeExecution(session.id, flow.id, contactId, node.id, node.type, null, `Sent List Message: ${bodyText.slice(0, 100)}`, 'success');
-          const edge = edges.find(e => e.source === node.id);
-          nextNodeId = edge ? edge.target : null;
+
+          const hasItems = rawSections.some((s: any) => s.rows && s.rows.length > 0);
+          if (hasItems) {
+            // Pause session to wait for item click response
+            await execute(
+              'UPDATE flow_sessions SET current_node_id = ?, resume_at = NULL WHERE id = ?',
+              [node.id, session.id]
+            );
+            pauseExecution = true;
+          } else {
+            const edge = edges.find(e => e.source === node.id);
+            nextNodeId = edge ? edge.target : null;
+          }
           break;
         }
 

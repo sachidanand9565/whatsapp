@@ -1359,21 +1359,38 @@ export default function InboxPage() {
                         : 'bg-white text-gray-800 rounded-bl-sm'}`}>
 
                       {/* Reply reference — with linked message or fallback to last template */}
-                      {m.type === 'button' && (() => {
+                      {(m.replied_to_wamid || m.type === 'button' || m.type === 'interactive') && (() => {
                         const quotedMsg = repliedMsg || messages.slice().reverse().find(
-                          (x) => x.direction === 'outbound' && x.type === 'template' && x.id < m.id
+                          (x) => x.direction === 'outbound' && (x.type === 'template' || x.type === 'interactive') && x.id < m.id
                         );
+                        if (!quotedMsg) return null;
                         const quotedTpl = quotedMsg ? parseTemplateContent(quotedMsg.content) : null;
+                        
+                        // Clean up body text for preview
+                        let previewText = '';
+                        if (quotedTpl) {
+                          previewText = quotedTpl.body || 'Template message';
+                        } else if (quotedMsg.type === 'interactive') {
+                          try {
+                            const parsed = JSON.parse(quotedMsg.content);
+                            previewText = parsed.body || parsed.text || quotedMsg.content;
+                          } catch {
+                            previewText = quotedMsg.content;
+                          }
+                        } else {
+                          previewText = quotedMsg.content;
+                        }
+
                         return (
                           <button
                             onClick={() => quotedMsg?.wamid && scrollToReplied(quotedMsg.wamid)}
-                            className="w-full text-left bg-black/10 border-l-4 border-green-400 px-3 py-2 hover:bg-black/15 transition-colors">
-                            <p className="text-green-500 font-semibold text-xs flex items-center gap-1 mb-0.5">
+                            className="w-full text-left bg-black/5 border-l-4 border-green-500 px-3 py-1.5 hover:bg-black/10 transition-colors border-b border-gray-100/50 block">
+                            <p className="text-green-600 font-semibold text-[10px] flex items-center gap-1 mb-0.5">
                               ↩ Replied to this message
                             </p>
-                            <p className="text-gray-600 text-xs truncate">
-                              {quotedTpl?.body?.slice(0, 55) || quotedMsg?.content?.slice(0, 55) || 'Template message'}
-                              {((quotedTpl?.body?.length || 0) > 55) && '…'}
+                            <p className="text-gray-500 text-xs truncate">
+                              {previewText.slice(0, 55)}
+                              {previewText.length > 55 && '…'}
                             </p>
                           </button>
                         );

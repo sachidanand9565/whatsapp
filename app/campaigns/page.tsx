@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/hooks/useApi';
-import { Plus, Play, Radio, Zap, GitBranch, ShoppingBag, ChevronRight, Trash2, UserPlus, X } from 'lucide-react';
+import { Plus, Play, Radio, Zap, ChevronRight, Trash2, UserPlus, X, Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Eye, Send, CheckCircle2, AlertCircle, Phone, Sparkles, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Campaign, Template, Contact, User } from '@/types';
 
@@ -17,11 +17,9 @@ const STATUS_COLORS: Record<string, string> = {
 const TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode; desc: string }> = {
   broadcast:     { label: 'Broadcast',     color: 'text-purple-700', bg: 'bg-purple-100', icon: <Radio size={12} />,       desc: 'Bulk send to a list of contacts' },
   api:           { label: 'API',           color: 'text-blue-700',   bg: 'bg-blue-100',   icon: <Zap size={12} />,         desc: 'Triggered via external API calls' },
-  drip:          { label: 'Drip',          color: 'text-orange-700', bg: 'bg-orange-100', icon: <GitBranch size={12} />,   desc: 'Automated sequence of messages' },
-  transactional: { label: 'Transactional', color: 'text-teal-700',   bg: 'bg-teal-100',   icon: <ShoppingBag size={12} />, desc: 'Order & booking confirmations' },
 };
 
-const ALL_TYPES = ['all', 'broadcast', 'api', 'drip', 'transactional'] as const;
+const ALL_TYPES = ['all', 'broadcast', 'api'] as const;
 type FilterType = typeof ALL_TYPES[number];
 
 export default function CampaignsPage() {
@@ -254,7 +252,7 @@ export default function CampaignsPage() {
       )}
 
       {showModal && (
-        <CampaignModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); }} />
+        <CampaignWizard onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); }} />
       )}
 
       {assignCampaign && (
@@ -370,71 +368,301 @@ function AssignAgentModal({ campaign, onClose }: { campaign: Campaign; onClose: 
   );
 }
 
-// ---- Campaign Creation Modal ----
-function CampaignModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [templates, setTemplates]     = useState<Template[]>([]);
-  const [contacts, setContacts]       = useState<Contact[]>([]);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [createdId, setCreatedId]     = useState<number | null>(null);
-  const [form, setForm]               = useState({
-    name: '', template_id: '', scheduled_at: '', campaign_type: 'broadcast',
-  });
-  const [saving, setSaving] = useState(false);
+// ╔═══════════════════════════════════════════════════════════════╗
+// ║  CAMPAIGN CREATION WIZARD — AiSensy-Style 3-Step Flow       ║
+// ╚═══════════════════════════════════════════════════════════════╝
 
-  const isApi = form.campaign_type === 'api';
+interface CsvRow {
+  [key: string]: string;
+}
+
+function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [step, setStep]             = useState(1);
+  const [templates, setTemplates]   = useState<Template[]>([]);
+  const [contacts, setContacts]     = useState<Contact[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Step 1: Campaign info
+  const [campaignName, setCampaignName]     = useState('');
+  const [campaignType, setCampaignType]     = useState<'broadcast' | 'api'>('broadcast');
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+
+  // Step 2: Audience
+  const [audienceMode, setAudienceMode]   = useState<'csv' | 'contacts'>('csv');
+  const [csvFile, setCsvFile]             = useState<File | null>(null);
+  const [csvData, setCsvData]             = useState<CsvRow[]>([]);
+  const [csvColumns, setCsvColumns]       = useState<string[]>([]);
+  const [csvError, setCsvError]           = useState('');
+  const [selectedContactIds, setSelectedContactIds] = useState<number[]>([]);
+  const [varMapping, setVarMapping]       = useState<Record<string, string>>({});
+  const [scheduledAt, setScheduledAt]     = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Step 3: Test & Launch
+  const [testPhone, setTestPhone]       = useState('');
+  const [testSending, setTestSending]   = useState(false);
+  const [testResult, setTestResult]     = useState<{ success: boolean; message: string } | null>(null);
+  const [createdId, setCreatedId]       = useState<number | null>(null);
+  const [saving, setSaving]             = useState(false);
+  const [launching, setLaunching]       = useState(false);
+
+  // For API campaign: show endpoint after creation
+  const [apiCreatedId, setApiCreatedId] = useState<number | null>(null);
+
+  const isApi = campaignType === 'api';
 
   useEffect(() => {
-    apiFetch('/api/templates').then((r) => setTemplates(r.data?.filter((t: Template) => t.status === 'APPROVED') || []));
-    if (!isApi) {
-      apiFetch('/api/contacts?limit=500').then((r) => setContacts(r.data?.data || []));
+    setLoadingData(true);
+    Promise.all([
+      apiFetch('/api/templates').then((r) => r.data?.filter((t: Template) => t.status === 'APPROVED') || []),
+      apiFetch('/api/contacts?limit=500').then((r) => r.data?.data || []),
+    ]).then(([tmpls, cts]) => {
+      setTemplates(tmpls);
+      setContacts(cts);
+      setLoadingData(false);
+    });
+  }, []);
+
+  // Extract template variables ({{1}}, {{2}}, etc.)
+  const templateVars = selectedTemplate?.body_text
+    ? (selectedTemplate.body_text.match(/\{\{(\d+)\}\}/g) || []).map((v) => v.replace(/[{}]/g, ''))
+    : [];
+
+  // Parse CSV file
+  const handleCsvUpload = useCallback(async (file: File) => {
+    setCsvFile(file);
+    setCsvError('');
+    setCsvData([]);
+    setCsvColumns([]);
+
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      if (lines.length < 2) {
+        setCsvError('CSV file must have headers and at least 1 data row');
+        return;
+      }
+
+      // Parse header
+      const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, '').toLowerCase());
+
+      // Check for phone column
+      if (!headers.includes('phone') && !headers.includes('mobile') && !headers.includes('number') && !headers.includes('whatsapp')) {
+        setCsvError('CSV must have a "phone" column (or "mobile", "number", "whatsapp")');
+        return;
+      }
+
+      // Parse rows (limit to 10000)
+      const rows: CsvRow[] = [];
+      const maxRows = Math.min(lines.length, 10001); // +1 for header
+      for (let i = 1; i < maxRows; i++) {
+        const vals = lines[i].split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
+        const row: CsvRow = {};
+        headers.forEach((h, idx) => {
+          row[h] = vals[idx] || '';
+        });
+        // Normalize phone column
+        const phoneCol = headers.find((h) => ['phone', 'mobile', 'number', 'whatsapp'].includes(h));
+        if (phoneCol && row[phoneCol]) {
+          row.phone = row[phoneCol];
+        }
+        if (row.phone) rows.push(row);
+      }
+
+      setCsvColumns(headers);
+      setCsvData(rows);
+
+      // Auto-map variables if column names match common patterns
+      if (templateVars.length > 0) {
+        const autoMap: Record<string, string> = {};
+        templateVars.forEach((v) => {
+          // Try to auto-map first var to "name", second to common fields
+          if (!autoMap[v] && headers.includes('name') && !Object.values(autoMap).includes('name')) {
+            autoMap[v] = 'name';
+          }
+        });
+        setVarMapping(autoMap);
+      }
+    } catch {
+      setCsvError('Failed to parse CSV file');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.campaign_type]);
+  }, [templateVars.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleContact(id: number) {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    setSelectedContactIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   }
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isApi && selectedIds.length === 0) {
-      toast.error('Select at least one contact');
-      return;
-    }
+  // Create campaign
+  async function createCampaign(): Promise<number | null> {
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        name: campaignName,
+        template_id: selectedTemplate!.id,
+        campaign_type: campaignType,
+        template_vars: varMapping,
+      };
+
+      if (scheduledAt) body.scheduled_at = scheduledAt;
+
+      if (isApi) {
+        body.contact_ids = [];
+      } else if (audienceMode === 'csv' && csvData.length > 0) {
+        body.csv_contacts = csvData.map((row) => ({
+          name: row.name || null,
+          phone: row.phone || '',
+          email: row.email || null,
+          city: row.city || null,
+          source: row.source || 'csv_campaign',
+        }));
+      } else {
+        body.contact_ids = selectedContactIds;
+      }
+
       const r = await apiFetch('/api/campaigns', {
         method: 'POST',
-        body:   JSON.stringify({
-          name:          form.name,
-          template_id:   Number(form.template_id),
-          scheduled_at:  form.scheduled_at || undefined,
-          campaign_type: form.campaign_type,
-          contact_ids:   isApi ? [] : selectedIds,
-        }),
+        body: JSON.stringify(body),
       });
-      if (isApi) {
-        setCreatedId(r.data?.id);
-      } else {
-        toast.success('Campaign created!');
-        onSaved();
-      }
+
+      const id = r.data?.id;
+      setCreatedId(id);
+      return id;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error');
+      toast.error(err instanceof Error ? err.message : 'Failed to create campaign');
+      return null;
     } finally {
       setSaving(false);
     }
   }
 
-  const apiEndpoint = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/campaigns/${createdId}/send`
-    : `/api/campaigns/${createdId}/send`;
+  // Test send
+  async function sendTest() {
+    if (!testPhone.trim()) { toast.error('Enter a phone number'); return; }
 
-  // ── After API campaign created: show endpoint info ──────────
-  if (createdId) {
+    // Create campaign first if not created
+    let campId = createdId;
+    if (!campId) {
+      campId = await createCampaign();
+      if (!campId) return;
+    }
+
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      // Build test variables from mapping
+      const testVars: Record<string, string> = {};
+      for (const [varIdx, columnName] of Object.entries(varMapping)) {
+        // Use first CSV row data or a sample value
+        if (csvData.length > 0 && csvData[0][columnName]) {
+          testVars[varIdx] = csvData[0][columnName];
+        } else {
+          testVars[varIdx] = `{{${varIdx}}}`;
+        }
+      }
+
+      const r = await apiFetch(`/api/campaigns/${campId}/test`, {
+        method: 'POST',
+        body: JSON.stringify({ phone: testPhone, variables: testVars }),
+      });
+      setTestResult({ success: true, message: r.data?.message || 'Test message sent!' });
+    } catch (err) {
+      setTestResult({ success: false, message: err instanceof Error ? err.message : 'Failed' });
+    } finally {
+      setTestSending(false);
+    }
+  }
+
+  // Launch campaign
+  async function handleLaunch() {
+    let campId = createdId;
+    if (!campId) {
+      campId = await createCampaign();
+      if (!campId) return;
+    }
+
+    setLaunching(true);
+    try {
+      const r = await apiFetch(`/api/campaigns/${campId}/launch`, { method: 'POST' });
+      toast.success(r.data?.message || 'Campaign launched!');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Launch failed');
+    } finally {
+      setLaunching(false);
+    }
+  }
+
+  // Save as draft
+  async function handleSaveDraft() {
+    const id = await createCampaign();
+    if (id) {
+      toast.success('Campaign saved as draft!');
+      onSaved();
+    }
+  }
+
+  // API campaign creation
+  async function handleApiCreate() {
+    const id = await createCampaign();
+    if (id) setApiCreatedId(id);
+  }
+
+  // Audience count
+  const audienceCount = audienceMode === 'csv' ? csvData.length : selectedContactIds.length;
+
+  // Step validation
+  const canGoStep2 = campaignName.trim() && selectedTemplate;
+  const canGoStep3 = isApi || audienceCount > 0;
+
+  // Render template preview bubble
+  function TemplatePreview({ template }: { template: Template }) {
+    let body = template.body_text || '';
+    // Replace vars with highlights
+    body = body.replace(/\{\{(\d+)\}\}/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-mono text-xs">{{$1}}</span>');
+
+    // Parse buttons
+    let buttons: { type: string; text: string }[] = [];
+    try {
+      const parsed = typeof template.buttons === 'string' ? JSON.parse(template.buttons) : template.buttons;
+      if (Array.isArray(parsed)) buttons = parsed;
+    } catch { /* empty */ }
+
+    return (
+      <div className="bg-[#e7fed6] rounded-xl rounded-tl-none p-3 max-w-[280px] shadow-sm border border-green-200">
+        {template.header_type === 'TEXT' && template.header_content && (
+          <p className="font-bold text-sm text-gray-900 mb-1">{template.header_content}</p>
+        )}
+        {template.header_type === 'IMAGE' && (
+          <div className="w-full h-32 bg-gray-200 rounded-lg mb-2 flex items-center justify-center text-gray-400 text-xs">
+            📷 Image Header
+          </div>
+        )}
+        <p className="text-sm text-gray-800 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: body }} />
+        {template.footer_text && (
+          <p className="text-xs text-gray-500 mt-2">{template.footer_text}</p>
+        )}
+        {buttons.length > 0 && (
+          <div className="mt-2 border-t border-green-300 pt-2 space-y-1">
+            {buttons.map((btn, i) => (
+              <div key={i} className="text-center text-sm text-blue-600 font-medium py-1 hover:bg-green-100 rounded cursor-default">
+                {btn.text}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── API Campaign created → show endpoint ──
+  if (apiCreatedId) {
+    const apiEndpoint = typeof window !== 'undefined'
+      ? `${window.location.origin}/api/campaigns/${apiCreatedId}/send`
+      : `/api/campaigns/${apiCreatedId}/send`;
+
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
           <div className="p-6 border-b border-gray-200 flex items-center gap-3">
             <span className="text-2xl">✅</span>
             <h2 className="font-bold text-lg">API Campaign Created!</h2>
@@ -473,57 +701,419 @@ function CampaignModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="font-bold text-lg">New Campaign</h2>
-        </div>
-        <form onSubmit={save} className="p-6 space-y-4 overflow-y-auto flex-1">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Name *</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="input" placeholder="e.g. Diwali Offer 2024" required />
+            <h2 className="font-bold text-lg text-gray-900">New Campaign</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {isApi ? 'API Campaign' : `Step ${step} of 3`}
+            </p>
           </div>
+          <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-gray-600" /></button>
+        </div>
 
-          {/* Campaign Type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Campaign Type *</label>
-            <div className="grid grid-cols-2 gap-2">
-              {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
-                <label key={key} className={`flex items-start gap-2.5 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                  form.campaign_type === key
-                    ? 'border-green-600 bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}>
-                  <input type="radio" name="campaign_type" value={key}
-                    checked={form.campaign_type === key}
-                    onChange={() => setForm({ ...form, campaign_type: key })}
-                    className="mt-0.5 accent-green-600" />
-                  <div>
-                    <div className={`flex items-center gap-1 text-sm font-medium ${cfg.color}`}>
-                      {cfg.icon} {cfg.label}
-                    </div>
-                    <p className="text-xs text-gray-400 mt-0.5">{cfg.desc}</p>
+        {/* Step Indicator (Broadcast only) */}
+        {!isApi && (
+          <div className="px-6 pt-4 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              {[
+                { num: 1, label: 'Select Template', icon: <FileSpreadsheet size={14} /> },
+                { num: 2, label: 'Audience & Variables', icon: <Users size={14} /> },
+                { num: 3, label: 'Test & Launch', icon: <Send size={14} /> },
+              ].map(({ num, label, icon }, idx) => (
+                <div key={num} className="flex items-center gap-2 flex-1">
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium w-full transition-all ${
+                    step === num
+                      ? 'bg-green-50 text-green-700 border border-green-200'
+                      : step > num
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-100 text-gray-400'
+                  }`}>
+                    {step > num ? <CheckCircle2 size={14} /> : icon}
+                    <span className="truncate">{label}</span>
                   </div>
-                </label>
+                  {idx < 2 && <ArrowRight size={14} className="text-gray-300 flex-shrink-0" />}
+                </div>
               ))}
             </div>
           </div>
+        )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Template * (Approved only)</label>
-            <select value={form.template_id} onChange={(e) => setForm({ ...form, template_id: e.target.value })}
-              className="input" required>
-              <option value="">Select template</option>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            {templates.length === 0 && (
-              <p className="text-xs text-red-500 mt-1">No approved templates. Create and get a template approved first.</p>
-            )}
-          </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-          {/* API type: show info box instead of contacts/schedule */}
-          {isApi ? (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+          {/* ════════════════════════════════════════════════════ */}
+          {/* STEP 1: Campaign Info + Template Selection           */}
+          {/* ════════════════════════════════════════════════════ */}
+          {step === 1 && (
+            <>
+              {/* Campaign Name */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Campaign Name *</label>
+                <input value={campaignName} onChange={(e) => setCampaignName(e.target.value)}
+                  className="input" placeholder="e.g. Diwali Sale 2024" required />
+              </div>
+
+              {/* Campaign Type */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Campaign Type *</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
+                    <label key={key} className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      campaignType === key
+                        ? 'border-green-600 bg-green-50 shadow-sm'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input type="radio" name="campaign_type" value={key}
+                        checked={campaignType === key}
+                        onChange={() => setCampaignType(key as 'broadcast' | 'api')}
+                        className="mt-0.5 accent-green-600" />
+                      <div>
+                        <div className={`flex items-center gap-1.5 text-sm font-semibold ${cfg.color}`}>
+                          {cfg.icon} {cfg.label}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">{cfg.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Template Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Template * <span className="font-normal text-gray-400">(Approved only)</span></label>
+                {loadingData ? (
+                  <div className="text-center py-6 text-gray-400 text-sm">Loading templates...</div>
+                ) : templates.length === 0 ? (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">
+                    No approved templates found. Create and get a template approved first.
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-xl max-h-60 overflow-y-auto divide-y divide-gray-100">
+                    {templates.map((t) => {
+                      const isSelected = selectedTemplate?.id === t.id;
+                      const vars = (t.body_text || '').match(/\{\{(\d+)\}\}/g) || [];
+                      return (
+                        <label key={t.id}
+                          className={`flex items-start gap-3 p-3 cursor-pointer transition-colors ${
+                            isSelected ? 'bg-green-50' : 'hover:bg-gray-50'
+                          }`}>
+                          <input type="radio" name="template" checked={isSelected}
+                            onChange={() => { setSelectedTemplate(t); setVarMapping({}); }}
+                            className="mt-1 accent-green-600" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-gray-900">{t.name}</p>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                t.category === 'MARKETING' ? 'bg-purple-100 text-purple-700' :
+                                t.category === 'UTILITY' ? 'bg-blue-100 text-blue-700' :
+                                'bg-orange-100 text-orange-700'
+                              }`}>{t.category}</span>
+                              <span className="text-[10px] text-gray-400">{t.language}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{t.body_text}</p>
+                            {vars.length > 0 && (
+                              <div className="flex gap-1 mt-1.5">
+                                {vars.map((v, i) => (
+                                  <span key={i} className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-mono">
+                                    {v}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Template Preview */}
+              {selectedTemplate && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Template Preview</label>
+                  <div className="bg-[#ece5dd] rounded-xl p-4 flex justify-start">
+                    <TemplatePreview template={selectedTemplate} />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ════════════════════════════════════════════════════ */}
+          {/* STEP 2: Audience & Variable Mapping                  */}
+          {/* ════════════════════════════════════════════════════ */}
+          {step === 2 && !isApi && (
+            <>
+              {/* Audience Mode Toggle */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Select Audience</label>
+                <div className="flex gap-2">
+                  <button onClick={() => setAudienceMode('csv')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      audienceMode === 'csv'
+                        ? 'bg-green-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}>
+                    <Upload size={14} /> Upload CSV
+                  </button>
+                  <button onClick={() => setAudienceMode('contacts')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      audienceMode === 'contacts'
+                        ? 'bg-green-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}>
+                    <Users size={14} /> Existing Contacts
+                  </button>
+                </div>
+              </div>
+
+              {/* CSV Upload */}
+              {audienceMode === 'csv' && (
+                <div>
+                  <input type="file" accept=".csv" ref={fileInputRef} className="hidden"
+                    onChange={(e) => { if (e.target.files?.[0]) handleCsvUpload(e.target.files[0]); }} />
+
+                  {!csvFile ? (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-green-400 hover:bg-green-50/50 transition-all group">
+                      <div className="w-14 h-14 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-3 group-hover:bg-green-200 transition-colors">
+                        <FileSpreadsheet size={24} className="text-green-600" />
+                      </div>
+                      <p className="text-sm font-semibold text-gray-700">Click to upload CSV file</p>
+                      <p className="text-xs text-gray-400 mt-1">CSV must have a &quot;phone&quot; column. Max 10,000 contacts.</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Supported columns: name, phone, email, city, source</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* File info */}
+                      <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-3">
+                        <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
+                          <FileSpreadsheet size={18} className="text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{csvFile.name}</p>
+                          <p className="text-xs text-green-600">{csvData.length} contacts found • {csvColumns.length} columns</p>
+                        </div>
+                        <button onClick={() => { setCsvFile(null); setCsvData([]); setCsvColumns([]); setCsvError(''); }}
+                          className="text-gray-400 hover:text-red-500 p-1">
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      {csvError && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600 flex items-center gap-2">
+                          <AlertCircle size={14} /> {csvError}
+                        </div>
+                      )}
+
+                      {/* CSV Preview */}
+                      {csvData.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 mb-1.5">Preview (first 5 rows)</p>
+                          <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-gray-50 border-b border-gray-200">
+                                  {csvColumns.map((col) => (
+                                    <th key={col} className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">{col}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {csvData.slice(0, 5).map((row, i) => (
+                                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                                    {csvColumns.map((col) => (
+                                      <td key={col} className="px-3 py-2 text-gray-700 whitespace-nowrap">{row[col] || '—'}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Contacts Selector */}
+              {audienceMode === 'contacts' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Contacts ({selectedContactIds.length} selected)
+                  </label>
+                  <div className="border border-gray-200 rounded-xl max-h-52 overflow-y-auto divide-y divide-gray-100">
+                    <label className="flex items-center gap-3 px-3 py-2.5 bg-gray-50 cursor-pointer hover:bg-gray-100 sticky top-0">
+                      <input type="checkbox"
+                        checked={selectedContactIds.length === contacts.length && contacts.length > 0}
+                        onChange={(e) => setSelectedContactIds(e.target.checked ? contacts.map((c) => c.id) : [])}
+                        className="accent-green-600"
+                      />
+                      <span className="text-sm font-semibold">Select All ({contacts.length})</span>
+                    </label>
+                    {contacts.length === 0 && (
+                      <p className="text-xs text-gray-400 px-3 py-4 text-center">
+                        No contacts yet. Add contacts first from the Contacts page.
+                      </p>
+                    )}
+                    {contacts.map((c) => (
+                      <label key={c.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" checked={selectedContactIds.includes(c.id)} onChange={() => toggleContact(c.id)} className="accent-green-600" />
+                        <span className="text-sm">{c.name || c.phone} <span className="text-gray-400">+{c.phone}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Variable Mapping */}
+              {templateVars.length > 0 && (audienceMode === 'csv' ? csvData.length > 0 : selectedContactIds.length > 0) && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <Sparkles size={14} className="inline mr-1 text-yellow-500" />
+                    Map Template Variables
+                  </label>
+                  <p className="text-xs text-gray-400 mb-3">Map each template variable to a data column. These values will be personalized for each contact.</p>
+                  <div className="space-y-2">
+                    {templateVars.map((varNum) => (
+                      <div key={varNum} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+                        <span className="bg-yellow-100 text-yellow-700 px-2.5 py-1 rounded-lg text-sm font-mono font-bold flex-shrink-0">
+                          {`{{${varNum}}}`}
+                        </span>
+                        <ArrowRight size={14} className="text-gray-400 flex-shrink-0" />
+                        <select
+                          value={varMapping[varNum] || ''}
+                          onChange={(e) => setVarMapping((prev) => ({ ...prev, [varNum]: e.target.value }))}
+                          className="input flex-1 !py-2"
+                        >
+                          <option value="">— Select column —</option>
+                          {audienceMode === 'csv' ? (
+                            csvColumns.map((col) => (
+                              <option key={col} value={col}>{col}</option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="name">Name</option>
+                              <option value="phone">Phone</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Schedule */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Schedule (optional)</label>
+                <input type="datetime-local" value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)} className="input" />
+                <p className="text-xs text-gray-400 mt-1">Leave empty to send now after launching.</p>
+              </div>
+            </>
+          )}
+
+          {/* ════════════════════════════════════════════════════ */}
+          {/* STEP 3: Test & Launch                                */}
+          {/* ════════════════════════════════════════════════════ */}
+          {step === 3 && !isApi && (
+            <>
+              {/* Campaign Summary */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-5 space-y-3">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-green-600" /> Campaign Summary
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-gray-500 text-xs">Campaign Name</p>
+                    <p className="font-semibold text-gray-900">{campaignName}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">Template</p>
+                    <p className="font-semibold text-gray-900">{selectedTemplate?.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">Audience</p>
+                    <p className="font-semibold text-gray-900">{audienceCount} contacts</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">Schedule</p>
+                    <p className="font-semibold text-gray-900">{scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Send immediately'}</p>
+                  </div>
+                </div>
+                {Object.keys(varMapping).length > 0 && (
+                  <div>
+                    <p className="text-gray-500 text-xs mb-1">Variable Mapping</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(varMapping).map(([varIdx, col]) => (
+                        <span key={varIdx} className="text-xs bg-white border border-green-200 rounded-lg px-2 py-1">
+                          <span className="font-mono text-yellow-700">{`{{${varIdx}}}`}</span> → <span className="font-semibold">{col}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Test Send Section */}
+              <div className="border-2 border-blue-200 bg-blue-50/50 rounded-xl p-5 space-y-3">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                  <Phone size={16} className="text-blue-600" /> Test Before Launch
+                </h3>
+                <p className="text-xs text-gray-500">Send a test message to your number to verify the template looks correct with mapped variables.</p>
+
+                <div className="flex gap-2">
+                  <input
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    placeholder="e.g. 919876543210"
+                    className="input flex-1"
+                  />
+                  <button onClick={sendTest} disabled={testSending}
+                    className="btn-primary flex items-center gap-2 text-sm px-5 whitespace-nowrap">
+                    {testSending ? (
+                      <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending...</>
+                    ) : (
+                      <><Send size={14} /> Send Test</>
+                    )}
+                  </button>
+                </div>
+
+                {testResult && (
+                  <div className={`flex items-center gap-2 text-sm rounded-lg p-3 ${
+                    testResult.success
+                      ? 'bg-green-100 text-green-700 border border-green-300'
+                      : 'bg-red-100 text-red-700 border border-red-300'
+                  }`}>
+                    {testResult.success ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                    {testResult.message}
+                  </div>
+                )}
+              </div>
+
+              {/* Template Preview with mapped data */}
+              {selectedTemplate && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <Eye size={14} className="inline mr-1" /> Message Preview
+                  </label>
+                  <div className="bg-[#ece5dd] rounded-xl p-4 flex justify-start">
+                    <TemplatePreview template={selectedTemplate} />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* API Campaign — Step 1 is enough */}
+          {step === 1 && isApi && selectedTemplate && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-3">
               <p className="text-sm font-semibold text-blue-800 flex items-center gap-2">
                 <Zap size={14} /> API Campaign — No contacts needed
               </p>
@@ -532,49 +1122,59 @@ function CampaignModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                 kisi bhi number pe message bhej sakte ho — manually contacts select karne ki zaroorat nahi.
               </p>
             </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Schedule (optional)</label>
-                <input type="datetime-local" value={form.scheduled_at}
-                  onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} className="input" />
-              </div>
+          )}
+        </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Contacts ({selectedIds.length} selected)
-                </label>
-                <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
-                  <label className="flex items-center gap-3 px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100">
-                    <input type="checkbox"
-                      checked={selectedIds.length === contacts.length && contacts.length > 0}
-                      onChange={(e) => setSelectedIds(e.target.checked ? contacts.map((c) => c.id) : [])}
-                    />
-                    <span className="text-sm font-medium">Select All ({contacts.length})</span>
-                  </label>
-                  {contacts.length === 0 && (
-                    <p className="text-xs text-gray-400 px-3 py-4 text-center">
-                      No contacts yet. Add contacts first from the Contacts page.
-                    </p>
-                  )}
-                  {contacts.map((c) => (
-                    <label key={c.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50">
-                      <input type="checkbox" checked={selectedIds.includes(c.id)} onChange={() => toggleContact(c.id)} />
-                      <span className="text-sm">{c.name || c.phone} <span className="text-gray-400">+{c.phone}</span></span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </>
+        {/* Footer Buttons */}
+        <div className="px-6 py-4 border-t border-gray-200 flex items-center gap-3 flex-shrink-0">
+          {/* Left side */}
+          {step > 1 && !isApi && (
+            <button onClick={() => setStep(step - 1)} className="btn-secondary flex items-center gap-1.5 text-sm">
+              <ArrowLeft size={14} /> Back
+            </button>
           )}
 
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary flex-1">
-              {saving ? 'Creating...' : isApi ? 'Create & Get API' : 'Create Campaign'}
+          <div className="flex-1" />
+
+          {/* Right side */}
+          <button onClick={onClose} className="btn-secondary text-sm">Cancel</button>
+
+          {isApi ? (
+            // API: Just create
+            <button onClick={handleApiCreate} disabled={saving || !canGoStep2}
+              className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+              {saving ? 'Creating...' : 'Create & Get API'}
             </button>
-          </div>
-        </form>
+          ) : step === 1 ? (
+            // Step 1 → Step 2
+            <button onClick={() => setStep(2)} disabled={!canGoStep2}
+              className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+              Next <ArrowRight size={14} />
+            </button>
+          ) : step === 2 ? (
+            // Step 2 → Step 3
+            <button onClick={() => setStep(3)} disabled={!canGoStep3}
+              className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+              Next <ArrowRight size={14} />
+            </button>
+          ) : (
+            // Step 3: Save Draft or Launch
+            <div className="flex gap-2">
+              <button onClick={handleSaveDraft} disabled={saving}
+                className="btn-secondary flex items-center gap-2 text-sm">
+                {saving ? 'Saving...' : 'Save as Draft'}
+              </button>
+              <button onClick={handleLaunch} disabled={launching || saving}
+                className="btn-primary flex items-center gap-2 text-sm bg-green-600 hover:bg-green-700">
+                {launching ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Launching...</>
+                ) : (
+                  <><Play size={14} /> Launch Campaign</>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

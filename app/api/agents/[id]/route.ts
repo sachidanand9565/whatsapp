@@ -7,14 +7,14 @@ import { requireAuth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { apiSuccess, apiError } from '@/lib/utils';
 
-type Ctx = { params: Promise<{ id: string }> };
+type Params = { params: { id: string } };
 
-export async function PATCH(req: NextRequest, ctx: Ctx) {
+export async function PATCH(req: NextRequest, { params }: Params) {
   try {
     const payload = requireAuth(req);
     if (payload.role !== 'admin') return apiError('Admin only', 403);
 
-    const { id } = await ctx.params;
+    const { id } = params;
     const agentId = Number(id);
     const { role, is_active } = await req.json();
 
@@ -42,12 +42,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   }
 }
 
-export async function DELETE(req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const payload = requireAuth(req);
     if (payload.role !== 'admin') return apiError('Admin only', 403);
 
-    const { id } = await ctx.params;
+    const { id } = params;
     const agentId = Number(id);
 
     // Remove from workspace (keeps user account but removes workspace access)

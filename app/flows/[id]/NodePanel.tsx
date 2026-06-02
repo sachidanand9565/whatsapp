@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { Node } from 'reactflow';
 import { X, Trash2, Plus } from 'lucide-react';
 
@@ -7,10 +8,23 @@ interface Props {
   onUpdate: (data: any) => void;
   onDelete: () => void;
   onClose: () => void;
+  triggerKeywords?: string[];
+  onTriggerKeywordsChange?: (kw: string[]) => void;
 }
 
-export default function NodePanel({ node, onUpdate, onDelete, onClose }: Props) {
+export default function NodePanel({ node, onUpdate, onDelete, onClose, triggerKeywords = [], onTriggerKeywordsChange }: Props) {
   const d = node.data;
+  const [kwVal, setKwVal] = useState('');
+
+  const handleAddKw = () => {
+    const val = kwVal.trim().toLowerCase();
+    if (!val) return;
+    if (triggerKeywords.includes(val)) return;
+    if (onTriggerKeywordsChange) {
+      onTriggerKeywordsChange([...triggerKeywords, val]);
+    }
+    setKwVal('');
+  };
 
   function field(label: string, key: string, type = 'text', placeholder = '') {
     return (
@@ -61,8 +75,60 @@ export default function NodePanel({ node, onUpdate, onDelete, onClose }: Props) 
     switch (node.type) {
       case 'start':
         return (
-          <div className="space-y-1 text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
-            Set trigger keywords using the <strong>"Triggers"</strong> button in the top bar.
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 leading-normal">
+              Flow will trigger when a contact sends any of these keywords.
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-2">
+                Trigger Keywords
+              </label>
+              
+              {/* Keywords Tag List */}
+              <div className="flex flex-wrap gap-1.5 min-h-[40px] bg-gray-50 border border-gray-200 rounded-lg p-2.5 mb-2.5">
+                {triggerKeywords.length === 0 && (
+                  <span className="text-xs text-gray-405 italic">No keywords configured yet.</span>
+                )}
+                {triggerKeywords.map((kw, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-100/80">
+                    {kw}
+                    <button
+                      onClick={() => {
+                        if (onTriggerKeywordsChange) {
+                          onTriggerKeywordsChange(triggerKeywords.filter((_, j) => j !== i));
+                        }
+                      }}
+                      className="hover:text-red-500 font-bold ml-0.5"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Keyword Input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={kwVal}
+                  onChange={e => setKwVal(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddKw();
+                    }
+                  }}
+                  placeholder="e.g. hello"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-whatsapp-green"
+                />
+                <button
+                  onClick={handleAddKw}
+                  className="bg-whatsapp-green hover:bg-green-700 text-white px-3 rounded-lg text-xs font-semibold flex items-center justify-center"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         );
 

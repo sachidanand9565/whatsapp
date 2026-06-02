@@ -330,10 +330,12 @@ export default function FlowBuilderPage() {
         {/* Right Panel — node settings */}
         {selected && (
           <NodePanel
-            node={selected}
+            node={nodes.find(n => n.id === selected.id) || selected}
             onUpdate={(data) => updateNodeData(selected.id, data)}
             onDelete={() => deleteNode(selected.id)}
             onClose={() => setSelected(null)}
+            triggerKeywords={keywords}
+            onTriggerKeywordsChange={setKeywords}
           />
         )}
       </div>

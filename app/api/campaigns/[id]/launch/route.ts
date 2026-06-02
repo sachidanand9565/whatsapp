@@ -1,7 +1,12 @@
+/**
+ * POST /api/campaigns/[id]/launch
+ * Launch a broadcast campaign — actually sends messages to all pending contacts.
+ */
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { query, execute } from '@/lib/db';
+import { query, execute, insert } from '@/lib/db';
 import { apiSuccess, apiError, utcNow } from '@/lib/utils';
+import { sendTemplateMessage } from '@/lib/whatsapp';
 import { RowDataPacket } from 'mysql2';
 
 type Params = { params: { id: string } };
@@ -11,7 +16,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const payload = requireAuth(req);
     const campaignId = Number(params.id);
 
-    // Load campaign
+    // Load campaign + template + workspace creds
     const camps = await query<RowDataPacket[]>(
       `SELECT c.*, t.name as tname, t.language, t.body_text,
               t.header_type, t.header_content, t.footer_text, t.buttons,
@@ -38,16 +43,154 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Mark as running
     await execute('UPDATE campaigns SET status = ?, started_at = ? WHERE id = ?', ['running', utcNow(), campaignId]);
 
-    // Get pending contacts count
-    const stats = await query<RowDataPacket[]>(
-      `SELECT COUNT(*) as pending_count
-       FROM campaign_contacts
-       WHERE campaign_id = ? AND status = 'pending'`,
+    // Get all pending contacts
+    const pendingContacts = await query<RowDataPacket[]>(
+      `SELECT cc.id as cc_id, cc.contact_id, ct.phone, ct.name as contact_name
+       FROM campaign_contacts cc
+       JOIN contacts ct ON ct.id = cc.contact_id
+       WHERE cc.campaign_id = ? AND cc.status = 'pending'`,
       [campaignId]
     );
-    const total = stats[0]?.pending_count || 0;
 
-    return apiSuccess({ message: `Campaign queued for sending to ${total} contacts.`, total });
+    const total = pendingContacts.length;
+    if (total === 0) {
+      await execute('UPDATE campaigns SET status = ?, completed_at = ? WHERE id = ?', ['completed', utcNow(), campaignId]);
+      return apiSuccess({ message: 'No pending contacts to send.', total: 0, sent: 0, failed: 0 });
+    }
+
+    // Parse template_vars mapping: { "1": "name", "2": "city" }
+    let varMapping: Record<string, string> = {};
+    try { varMapping = JSON.parse((camp.template_vars as string) || '{}'); } catch { varMapping = {}; }
+
+    // Parse buttons
+    let buttons: unknown[] = [];
+    try { buttons = JSON.parse((camp.buttons as string) || '[]'); } catch { buttons = []; }
+
+    const accessToken = camp.access_token as string;
+    const phoneNumberId = camp.phone_number_id as string;
+    const templateName = camp.tname as string;
+    const language = (camp.language as string) || 'en';
+    const bodyTextTemplate = (camp.body_text as string) || '';
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    // Send in batches of 10 with 1s delay between batches
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < pendingContacts.length; i += BATCH_SIZE) {
+      const batch = pendingContacts.slice(i, i + BATCH_SIZE);
+
+      const batchPromises = batch.map(async (contact) => {
+        try {
+          // Build variables for this contact from mapping
+          // varMapping example: { "1": "name", "2": "city" }
+          // We look up contact fields: contact.contact_name, contact.phone, etc.
+          // For CSV contacts, we need to load custom fields
+          const variables: Record<string, string> = {};
+          const contactFields: Record<string, string> = {
+            name: (contact.contact_name as string) || '',
+            phone: (contact.phone as string) || '',
+          };
+
+          // If template has variable mappings, apply them
+          if (Object.keys(varMapping).length > 0) {
+            for (const [varIdx, columnName] of Object.entries(varMapping)) {
+              variables[varIdx] = contactFields[columnName] || columnName || '';
+            }
+          }
+
+          // Build template components
+          const components: { type: string; parameters: { type: string; text: string }[] }[] = [];
+          if (Object.keys(variables).length > 0) {
+            const sortedKeys = Object.keys(variables).sort((a, b) => Number(a) - Number(b));
+            components.push({
+              type: 'body',
+              parameters: sortedKeys.map((k) => ({ type: 'text', text: variables[k] })),
+            });
+          }
+
+          // Send via Meta API
+          const result = await sendTemplateMessage(
+            accessToken,
+            phoneNumberId,
+            contact.phone as string,
+            templateName,
+            language,
+            components,
+          );
+
+          const wamid = (result?.messages as Record<string, unknown>[])?.[0]?.id as string | undefined;
+
+          // Build rendered body text
+          let bodyText = bodyTextTemplate;
+          for (const [k, v] of Object.entries(variables)) {
+            bodyText = bodyText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+          }
+
+          // Store message in messages table
+          const templateContent = JSON.stringify({
+            __type: 'template',
+            template_name: templateName,
+            header_type: camp.header_type || 'NONE',
+            header_content: camp.header_content || '',
+            body: bodyText,
+            footer: camp.footer_text || '',
+            buttons,
+          });
+
+          const t = utcNow();
+          const msgId = await insert(
+            `INSERT INTO messages
+               (workspace_id, contact_id, wamid, direction, type, content, campaign_id, status, sent_at, created_at)
+             VALUES (?, ?, ?, 'outbound', 'template', ?, ?, 'sent', ?, ?)`,
+            [payload.workspaceId, contact.contact_id, wamid || null, templateContent, campaignId, t, t]
+          );
+
+          // Update campaign_contacts status
+          await execute(
+            `UPDATE campaign_contacts SET status = 'sent', message_id = ?, sent_at = ? WHERE id = ?`,
+            [msgId, t, contact.cc_id]
+          );
+
+          sentCount++;
+        } catch (err) {
+          // Mark this contact as failed
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+          await execute(
+            `UPDATE campaign_contacts SET status = 'failed', error = ? WHERE id = ?`,
+            [errorMsg, contact.cc_id]
+          );
+          failedCount++;
+          console.error(`[launch] Failed to send to ${contact.phone}:`, err);
+        }
+      });
+
+      await Promise.all(batchPromises);
+
+      // Update campaign counters after each batch
+      await execute(
+        `UPDATE campaigns SET sent_count = ?, failed_count = ? WHERE id = ?`,
+        [sentCount, failedCount, campaignId]
+      );
+
+      // Delay between batches to avoid rate limiting (skip after last batch)
+      if (i + BATCH_SIZE < pendingContacts.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Mark campaign as completed
+    await execute(
+      'UPDATE campaigns SET status = ?, completed_at = ?, sent_count = ?, failed_count = ? WHERE id = ?',
+      ['completed', utcNow(), sentCount, failedCount, campaignId]
+    );
+
+    return apiSuccess({
+      message: `Campaign completed. Sent: ${sentCount}, Failed: ${failedCount}`,
+      total,
+      sent: sentCount,
+      failed: failedCount,
+    });
   } catch (err: unknown) {
     if (err instanceof Error && err.message === 'UNAUTHORIZED') return apiError('Unauthorized', 401);
     console.error('[launch]', err);

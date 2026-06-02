@@ -99,7 +99,7 @@ export interface Campaign {
   workspace_id:    number;
   name:            string;
   template_id:     number;
-  campaign_type:   'broadcast' | 'api' | 'drip' | 'transactional';
+  campaign_type:   'broadcast' | 'api';
   status:          'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'failed';
   scheduled_at:    string;
   total_contacts:  number;

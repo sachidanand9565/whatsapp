@@ -4,8 +4,8 @@
  */
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { query, insert } from '@/lib/db';
-import { apiSuccess, apiError } from '@/lib/utils';
+import { query, insert, execute } from '@/lib/db';
+import { apiSuccess, apiError, normalizePhone } from '@/lib/utils';
 import { RowDataPacket } from 'mysql2';
 
 export async function GET(req: NextRequest) {
@@ -66,12 +66,41 @@ export async function POST(req: NextRequest) {
     const payload = requireAuth(req);
     if (payload.role === 'agent') return apiError('Agents cannot create campaigns', 403);
 
-    const { name, template_id, scheduled_at, template_vars, contact_ids, campaign_type } = await req.json();
+    const { name, template_id, scheduled_at, template_vars, contact_ids, campaign_type, csv_contacts } = await req.json();
 
     if (!name || !template_id) return apiError('Name and template are required');
 
-    const validTypes = ['broadcast', 'api', 'drip', 'transactional'];
+    const validTypes = ['broadcast', 'api'];
     const type = validTypes.includes(campaign_type) ? campaign_type : 'broadcast';
+
+    // Resolve contact IDs from CSV data if provided
+    let resolvedContactIds: number[] = contact_ids || [];
+
+    if (csv_contacts && Array.isArray(csv_contacts) && csv_contacts.length > 0) {
+      // Upsert contacts from CSV
+      for (const row of csv_contacts) {
+        const phone = normalizePhone(row.phone || '');
+        if (!phone) continue;
+        await execute(
+          'INSERT IGNORE INTO contacts (workspace_id, phone, name, email, city, source, opted_in) VALUES (?, ?, ?, ?, ?, ?, 1)',
+          [payload.workspaceId, phone, row.name || null, row.email || null, row.city || null, row.source || 'csv_campaign']
+        );
+      }
+
+      // Collect all valid phones
+      const validPhones = csv_contacts
+        .map((row: Record<string, string>) => normalizePhone(row.phone || ''))
+        .filter(Boolean);
+
+      if (validPhones.length > 0) {
+        const placeholders = validPhones.map(() => '?').join(',');
+        const contactRows = await query<RowDataPacket[]>(
+          `SELECT id FROM contacts WHERE workspace_id = ? AND phone IN (${placeholders})`,
+          [payload.workspaceId, ...validPhones]
+        );
+        resolvedContactIds = contactRows.map((r) => r.id as number);
+      }
+    }
 
     const id = await insert(
       `INSERT INTO campaigns (workspace_id, name, template_id, campaign_type, status, scheduled_at, template_vars, created_by, total_contacts)
@@ -83,14 +112,15 @@ export async function POST(req: NextRequest) {
         scheduled_at || null,
         JSON.stringify(template_vars || {}),
         payload.userId,
-        contact_ids?.length || 0,
+        resolvedContactIds.length,
       ]
     );
 
-    // Add campaign contacts
-    if (contact_ids?.length > 0) {
-      const values = (contact_ids as number[]).map((cid) => `(${id}, ${cid})`).join(',');
-      await query(`INSERT IGNORE INTO campaign_contacts (campaign_id, contact_id) VALUES ${values}`);
+    // Add campaign contacts (parameterized - no SQL injection)
+    if (resolvedContactIds.length > 0) {
+      const placeholders = resolvedContactIds.map(() => '(?, ?)').join(',');
+      const values = resolvedContactIds.flatMap((cid) => [id, cid]);
+      await query(`INSERT IGNORE INTO campaign_contacts (campaign_id, contact_id) VALUES ${placeholders}`, values);
     }
 
     return apiSuccess({ id }, 201);
