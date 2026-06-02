@@ -983,9 +983,15 @@ export default function InboxPage() {
         {/* Search */}
         <div className="p-3 border-b border-gray-100">
           <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 focus-within:text-emerald-500 transition-colors" />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search contacts..." className="input pl-9 text-sm py-2" />
+              placeholder="Search contacts..." className="search-input" />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-gray-100">
+                <X size={12} />
+              </button>
+            )}
           </div>
         </div>
 

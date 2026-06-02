@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/hooks/useApi';
-import { Plus, Play, Radio, Zap, ChevronRight, Trash2, UserPlus, X, Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Eye, Send, CheckCircle2, AlertCircle, Phone, Sparkles, Users } from 'lucide-react';
+import { Plus, Play, Radio, Zap, ChevronRight, Trash2, UserPlus, X, Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Eye, Send, CheckCircle2, AlertCircle, Phone, Sparkles, Users, ChevronDown, Search, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Campaign, Template, Contact, User } from '@/types';
 
@@ -398,6 +398,35 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const [scheduledAt, setScheduledAt]     = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Media Header values (only for broadcast campaigns with media headers)
+  const [headerMediaType, setHeaderMediaType] = useState<'url' | 'id'>('url');
+  const [headerMediaValue, setHeaderMediaValue] = useState('');
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+
+  useEffect(() => {
+    setHeaderMediaType('url');
+    setHeaderMediaValue('');
+    setUploadedFileName('');
+  }, [selectedTemplate]);
+
+  // Template Search dropdown states
+  const [dropdownOpen, setDropdownOpen]   = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Step 3: Test & Launch
   const [testPhone, setTestPhone]       = useState('');
   const [testSending, setTestSending]   = useState(false);
@@ -410,6 +439,10 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const [apiCreatedId, setApiCreatedId] = useState<number | null>(null);
 
   const isApi = campaignType === 'api';
+
+  const filteredTemplates = templates.filter((t) =>
+    t.name.toLowerCase().includes(templateSearch.toLowerCase())
+  );
 
   useEffect(() => {
     setLoadingData(true);
@@ -500,7 +533,11 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         name: campaignName,
         template_id: selectedTemplate!.id,
         campaign_type: campaignType,
-        template_vars: varMapping,
+        template_vars: {
+          ...varMapping,
+          __header_media_type: headerMediaType,
+          __header_media_value: headerMediaValue,
+        },
       };
 
       if (scheduledAt) body.scheduled_at = scheduledAt;
@@ -611,11 +648,14 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const audienceCount = audienceMode === 'csv' ? csvData.length : selectedContactIds.length;
 
   // Step validation
+  const hasMediaHeader = selectedTemplate && ['IMAGE', 'DOCUMENT', 'VIDEO'].includes(selectedTemplate.header_type);
+  const isMediaHeaderFilled = !hasMediaHeader || headerMediaValue.trim();
+
   const canGoStep2 = campaignName.trim() && selectedTemplate;
-  const canGoStep3 = isApi || audienceCount > 0;
+  const canGoStep3 = (isApi || audienceCount > 0) && isMediaHeaderFilled;
 
   // Render template preview bubble
-  function TemplatePreview({ template }: { template: Template }) {
+  function TemplatePreview({ template, mediaType, mediaValue }: { template: Template; mediaType?: string; mediaValue?: string }) {
     let body = template.body_text || '';
     // Replace vars with highlights
     body = body.replace(/\{\{(\d+)\}\}/g, '<span class="bg-yellow-200 text-yellow-800 px-1 rounded font-mono text-xs">{{$1}}</span>');
@@ -633,8 +673,23 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
           <p className="font-bold text-sm text-gray-900 mb-1">{template.header_content}</p>
         )}
         {template.header_type === 'IMAGE' && (
-          <div className="w-full h-32 bg-gray-200 rounded-lg mb-2 flex items-center justify-center text-gray-400 text-xs">
-            📷 Image Header
+          mediaType === 'url' && mediaValue ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={mediaValue} alt="Header image" className="w-full h-32 object-cover rounded-lg mb-2" />
+          ) : (
+            <div className="w-full h-32 bg-gray-200 rounded-lg mb-2 flex items-center justify-center text-gray-400 text-xs">
+              📷 Image Header
+            </div>
+          )
+        )}
+        {template.header_type === 'VIDEO' && (
+          <div className="w-full h-32 bg-gray-200 rounded-lg mb-2 flex items-center justify-center text-gray-400 text-xs text-center px-2">
+            🎥 Video Header {mediaType === 'url' && mediaValue && '(URL Provided)'}
+          </div>
+        )}
+        {template.header_type === 'DOCUMENT' && (
+          <div className="w-full h-32 bg-gray-200 rounded-lg mb-2 flex items-center justify-center text-gray-400 text-xs text-center px-2">
+            📄 Document Header {mediaType === 'url' && mediaValue && '(URL Provided)'}
           </div>
         )}
         <p className="text-sm text-gray-800 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: body }} />
@@ -782,7 +837,7 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
 
               {/* Template Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Template * <span className="font-normal text-gray-400">(Approved only)</span></label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Template * <span className="font-normal text-gray-400">(Approved only)</span></label>
                 {loadingData ? (
                   <div className="text-center py-6 text-gray-400 text-sm">Loading templates...</div>
                 ) : templates.length === 0 ? (
@@ -790,42 +845,70 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                     No approved templates found. Create and get a template approved first.
                   </div>
                 ) : (
-                  <div className="border border-gray-200 rounded-xl max-h-60 overflow-y-auto divide-y divide-gray-100">
-                    {templates.map((t) => {
-                      const isSelected = selectedTemplate?.id === t.id;
-                      const vars = (t.body_text || '').match(/\{\{(\d+)\}\}/g) || [];
-                      return (
-                        <label key={t.id}
-                          className={`flex items-start gap-3 p-3 cursor-pointer transition-colors ${
-                            isSelected ? 'bg-green-50' : 'hover:bg-gray-50'
-                          }`}>
-                          <input type="radio" name="template" checked={isSelected}
-                            onChange={() => { setSelectedTemplate(t); setVarMapping({}); }}
-                            className="mt-1 accent-green-600" />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-gray-900">{t.name}</p>
-                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                                t.category === 'MARKETING' ? 'bg-purple-100 text-purple-700' :
-                                t.category === 'UTILITY' ? 'bg-blue-100 text-blue-700' :
-                                'bg-orange-100 text-orange-700'
-                              }`}>{t.category}</span>
-                              <span className="text-[10px] text-gray-400">{t.language}</span>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{t.body_text}</p>
-                            {vars.length > 0 && (
-                              <div className="flex gap-1 mt-1.5">
-                                {vars.map((v, i) => (
-                                  <span key={i} className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-mono">
-                                    {v}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </label>
-                      );
-                    })}
+                  <div className="relative" ref={dropdownRef}>
+                    {/* Trigger button */}
+                    <button
+                      type="button"
+                      onClick={() => setDropdownOpen(!dropdownOpen)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-left text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-200 flex justify-between items-center shadow-sm"
+                    >
+                      <span className={selectedTemplate ? 'text-slate-800 font-medium' : 'text-slate-400'}>
+                        {selectedTemplate ? `${selectedTemplate.name} (${selectedTemplate.language})` : 'Select template'}
+                      </span>
+                      <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Dropdown panel */}
+                    {dropdownOpen && (
+                      <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl p-2.5 space-y-2.5 max-h-72 flex flex-col">
+                        {/* Search Input */}
+                        <div className="relative flex-shrink-0">
+                          <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                          <input
+                            type="text"
+                            value={templateSearch}
+                            onChange={(e) => setTemplateSearch(e.target.value)}
+                            placeholder="Search templates..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-8 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all duration-200"
+                          />
+                          {templateSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setTemplateSearch('')}
+                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 p-0.5"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Options list */}
+                        <div className="overflow-y-auto flex-1 divide-y divide-slate-100 max-h-48">
+                          {filteredTemplates.length === 0 ? (
+                            <div className="text-center py-4 text-xs text-slate-400">No templates found</div>
+                          ) : (
+                            filteredTemplates.map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedTemplate(t);
+                                  setVarMapping({});
+                                  setDropdownOpen(false);
+                                  setTemplateSearch('');
+                                }}
+                                className={`w-full text-left px-3 py-2.5 text-xs rounded-lg transition-colors hover:bg-slate-50 flex items-center justify-between ${
+                                  selectedTemplate?.id === t.id ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-slate-700'
+                                }`}
+                              >
+                                <span>{t.name} ({t.language})</span>
+                                {selectedTemplate?.id === t.id && <Check size={12} className="text-emerald-600" />}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -835,7 +918,7 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Template Preview</label>
                   <div className="bg-[#ece5dd] rounded-xl p-4 flex justify-start">
-                    <TemplatePreview template={selectedTemplate} />
+                    <TemplatePreview template={selectedTemplate} mediaType={headerMediaType} mediaValue={headerMediaValue} />
                   </div>
                 </div>
               )}
@@ -971,6 +1054,121 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                 </div>
               )}
 
+              {/* Media Header Input */}
+              {selectedTemplate && ['IMAGE', 'DOCUMENT', 'VIDEO'].includes(selectedTemplate.header_type) && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Header {selectedTemplate.header_type} File *
+                    </label>
+                    {/* Toggle */}
+                    <div className="flex bg-gray-200 p-0.5 rounded-lg text-xs font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => { setHeaderMediaType('url'); setHeaderMediaValue(''); setUploadedFileName(''); }}
+                        className={`px-3 py-1 rounded-md transition-all ${headerMediaType === 'url' ? 'bg-white text-gray-900 shadow' : 'text-gray-500'}`}
+                      >
+                        Link URL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setHeaderMediaType('id'); setHeaderMediaValue(''); setUploadedFileName(''); }}
+                        className={`px-3 py-1 rounded-md transition-all ${headerMediaType === 'id' ? 'bg-white text-gray-900 shadow' : 'text-gray-500'}`}
+                      >
+                        Upload File
+                      </button>
+                    </div>
+                  </div>
+
+                  {headerMediaType === 'url' ? (
+                    <div>
+                      <input
+                        type="url"
+                        value={headerMediaValue}
+                        onChange={(e) => setHeaderMediaValue(e.target.value)}
+                        placeholder={`https://example.com/file.${selectedTemplate.header_type === 'IMAGE' ? 'jpg' : selectedTemplate.header_type === 'VIDEO' ? 'mp4' : 'pdf'}`}
+                        className="input"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Provide a publicly accessible URL for the media file.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {headerMediaValue ? (
+                        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-3">
+                          <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center text-white text-xs font-bold uppercase">
+                            {selectedTemplate.header_type.substring(0, 3)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">
+                              {uploadedFileName || 'Uploaded file'}
+                            </p>
+                            <p className="text-xs text-green-600">ID: {headerMediaValue}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setHeaderMediaValue(''); setUploadedFileName(''); }}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-green-400 hover:bg-green-50/50 transition-all">
+                            {uploadingMedia ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <div className="w-8 h-8 border-3 border-green-600 border-t-transparent rounded-full animate-spin" />
+                                <span className="text-xs text-gray-500">Uploading to WhatsApp...</span>
+                              </div>
+                            ) : (
+                              <>
+                                <Upload size={20} className="text-gray-400 mb-2" />
+                                <span className="text-xs font-semibold text-gray-600">Upload {selectedTemplate.header_type.toLowerCase()}</span>
+                                <span className="text-[10px] text-gray-400 mt-0.5">
+                                  {selectedTemplate.header_type === 'IMAGE' ? 'JPG, PNG max 5MB' : selectedTemplate.header_type === 'VIDEO' ? 'MP4 max 16MB' : 'PDF max 100MB'}
+                                </span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept={selectedTemplate.header_type === 'IMAGE' ? 'image/*' : selectedTemplate.header_type === 'VIDEO' ? 'video/*' : '.pdf,application/pdf'}
+                              disabled={uploadingMedia}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                setUploadingMedia(true);
+                                try {
+                                  const formData = new FormData();
+                                  formData.append('file', file);
+                                  const token = localStorage.getItem('token');
+                                  const res = await fetch('/api/media', {
+                                    method: 'POST',
+                                    headers: { Authorization: `Bearer ${token}` },
+                                    body: formData
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data.error || 'Upload failed');
+                                  setHeaderMediaValue(data.data.mediaId);
+                                  setUploadedFileName(file.name);
+                                  toast.success('Media uploaded successfully!');
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : 'Upload failed');
+                                } finally {
+                                  setUploadingMedia(false);
+                                }
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Variable Mapping */}
               {templateVars.length > 0 && (audienceMode === 'csv' ? csvData.length > 0 : selectedContactIds.length > 0) && (
                 <div>
@@ -1046,16 +1244,26 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                     <p className="text-gray-500 text-xs">Schedule</p>
                     <p className="font-semibold text-gray-900">{scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Send immediately'}</p>
                   </div>
+                  {hasMediaHeader && headerMediaValue && (
+                    <div className="col-span-2">
+                      <p className="text-gray-500 text-xs">Header {selectedTemplate?.header_type}</p>
+                      <p className="font-semibold text-gray-900 truncate">
+                        {headerMediaType === 'url' ? headerMediaValue : `${uploadedFileName || 'Uploaded file'} (ID: ${headerMediaValue})`}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                {Object.keys(varMapping).length > 0 && (
+                {Object.keys(varMapping).filter(k => !k.startsWith('__')).length > 0 && (
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Variable Mapping</p>
                     <div className="flex flex-wrap gap-2">
-                      {Object.entries(varMapping).map(([varIdx, col]) => (
-                        <span key={varIdx} className="text-xs bg-white border border-green-200 rounded-lg px-2 py-1">
-                          <span className="font-mono text-yellow-700">{`{{${varIdx}}}`}</span> → <span className="font-semibold">{col}</span>
-                        </span>
-                      ))}
+                      {Object.entries(varMapping)
+                        .filter(([varIdx]) => !varIdx.startsWith('__'))
+                        .map(([varIdx, col]) => (
+                          <span key={varIdx} className="text-xs bg-white border border-green-200 rounded-lg px-2 py-1">
+                            <span className="font-mono text-yellow-700">{`{{${varIdx}}}`}</span> → <span className="font-semibold">{col}</span>
+                          </span>
+                        ))}
                     </div>
                   </div>
                 )}
@@ -1104,7 +1312,7 @@ function CampaignWizard({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                     <Eye size={14} className="inline mr-1" /> Message Preview
                   </label>
                   <div className="bg-[#ece5dd] rounded-xl p-4 flex justify-start">
-                    <TemplatePreview template={selectedTemplate} />
+                    <TemplatePreview template={selectedTemplate} mediaType={headerMediaType} mediaValue={headerMediaValue} />
                   </div>
                 </div>
               )}

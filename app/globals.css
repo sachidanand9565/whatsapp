@@ -27,6 +27,9 @@
   .input {
     @apply w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-200;
   }
+  .search-input {
+    @apply w-full bg-slate-50/50 hover:bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-sm text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all duration-300 shadow-sm;
+  }
   .card {
     @apply bg-white/80 backdrop-blur-md rounded-2xl shadow-lg shadow-slate-100/50 border border-slate-200/50 p-6 transition-all duration-300;
   }

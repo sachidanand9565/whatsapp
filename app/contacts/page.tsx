@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/hooks/useApi';
-import { Plus, Search, Upload, Trash2, Edit2, Tag } from 'lucide-react';
+import { Plus, Search, Upload, Trash2, Edit2, Tag, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Contact } from '@/types';
 
@@ -84,12 +84,18 @@ export default function ContactsPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 focus-within:text-emerald-500 transition-colors" />
           <input
             value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search name, phone, email..."
-            className="input pl-9"
+            className="search-input"
           />
+          {search && (
+            <button onClick={() => { setSearch(''); setPage(1); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-gray-100">
+              <X size={12} />
+            </button>
+          )}
         </div>
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="input w-auto">
           <option value="">All Status</option>

@@ -95,12 +95,33 @@ export async function POST(req: NextRequest, { params }: Params) {
           // If template has variable mappings, apply them
           if (Object.keys(varMapping).length > 0) {
             for (const [varIdx, columnName] of Object.entries(varMapping)) {
+              if (varIdx.startsWith('__')) continue;
               variables[varIdx] = contactFields[columnName] || columnName || '';
             }
           }
 
           // Build template components
-          const components: { type: string; parameters: { type: string; text: string }[] }[] = [];
+          const components: any[] = [];
+
+          // Add header component if template has IMAGE, DOCUMENT, or VIDEO header
+          const headerType = camp.header_type as string;
+          if (['IMAGE', 'DOCUMENT', 'VIDEO'].includes(headerType)) {
+            const mediaType = headerType.toLowerCase() as 'image' | 'document' | 'video';
+            const mediaTypeValue = varMapping.__header_media_type;
+            const mediaVal = varMapping.__header_media_value;
+            if (mediaTypeValue && mediaVal) {
+              components.push({
+                type: 'header',
+                parameters: [
+                  {
+                    type: mediaType,
+                    [mediaType]: mediaTypeValue === 'url' ? { link: mediaVal } : { id: mediaVal }
+                  }
+                ]
+              });
+            }
+          }
+
           if (Object.keys(variables).length > 0) {
             const sortedKeys = Object.keys(variables).sort((a, b) => Number(a) - Number(b));
             components.push({

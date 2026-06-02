@@ -107,12 +107,18 @@ function AssignCampaignsModal({ agent, onClose }: { agent: Agent; onClose: () =>
         {/* Search */}
         <div className="px-6 py-3 border-b border-gray-100">
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 focus-within:text-emerald-500 transition-colors" />
             <input
               type="text" placeholder="Search campaigns…"
               value={search} onChange={(e) => setSearch(e.target.value)}
-              className="input pl-9 text-sm py-2"
+              className="search-input"
             />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-gray-100">
+                <X size={12} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -283,12 +289,18 @@ export default function AgentsPage() {
 
       {/* Search */}
       <div className="relative max-w-sm">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 focus-within:text-emerald-500 transition-colors" />
         <input
           type="text" placeholder="Search by name or email…"
           value={search} onChange={(e) => setSearch(e.target.value)}
-          className="input pl-9"
+          className="search-input"
         />
+        {search && (
+          <button onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-gray-100">
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       {/* Table */}

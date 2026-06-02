@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // Load campaign + template + workspace creds
     const rows = await query<RowDataPacket[]>(
-      `SELECT c.*, t.name as template_name, t.language, t.body_text,
+      `SELECT c.*, t.name as template_name, t.language, t.body_text, t.header_type,
               w.access_token, w.phone_number_id
        FROM campaigns c
        JOIN templates t ON t.id = c.template_id
@@ -41,13 +41,46 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!accessToken || !phoneNumberId) return apiError('WhatsApp credentials not configured', 400);
 
     // Build template components from variables
-    const components: { type: string; parameters: { type: string; text: string }[] }[] = [];
+    const components: any[] = [];
+
+    // Add header component if template has IMAGE, DOCUMENT, or VIDEO header
+    let storedVars: Record<string, string> = {};
+    try {
+      storedVars = JSON.parse((campaign.template_vars as string) || '{}');
+    } catch {
+      storedVars = {};
+    }
+
+    const headerType = campaign.header_type as string;
+    if (['IMAGE', 'DOCUMENT', 'VIDEO'].includes(headerType)) {
+      const mediaType = headerType.toLowerCase() as 'image' | 'document' | 'video';
+      const mediaTypeValue = storedVars.__header_media_type;
+      const mediaVal = storedVars.__header_media_value;
+      if (mediaTypeValue && mediaVal) {
+        components.push({
+          type: 'header',
+          parameters: [
+            {
+              type: mediaType,
+              [mediaType]: mediaTypeValue === 'url' ? { link: mediaVal } : { id: mediaVal }
+            }
+          ]
+        });
+      }
+    }
+
     if (variables && Object.keys(variables).length > 0) {
-      const sortedKeys = Object.keys(variables).sort((a, b) => Number(a) - Number(b));
-      components.push({
-        type: 'body',
-        parameters: sortedKeys.map((k) => ({ type: 'text', text: variables[k] })),
-      });
+      // Filter out special __ variables
+      const filteredVars = Object.keys(variables)
+        .filter((k) => !k.startsWith('__'))
+        .sort((a, b) => Number(a) - Number(b));
+
+      if (filteredVars.length > 0) {
+        components.push({
+          type: 'body',
+          parameters: filteredVars.map((k) => ({ type: 'text', text: variables[k] })),
+        });
+      }
     }
 
     // Send test message
