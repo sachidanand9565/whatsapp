@@ -133,8 +133,8 @@ export async function triggerFlowIfMatch(
 
       const sessionId = await insert(
         `INSERT INTO flow_sessions (workspace_id, flow_id, contact_id, current_node_id, variables, status, expires_at, started_at)
-         VALUES (?, ?, ?, 'start', '{}', 'active', ?, ?, ?)`,
-        [workspaceId, flow.id, contactId, expiresAtStr, utcNow(), utcNow()]
+         VALUES (?, ?, ?, 'start', '{}', 'active', ?, ?)`,
+        [workspaceId, flow.id, contactId, expiresAtStr, utcNow()]
       );
 
       // Log flow trigger event
@@ -803,8 +803,8 @@ export async function executeFlowStep(
 
             const newSessionId = await insert(
               `INSERT INTO flow_sessions (workspace_id, flow_id, contact_id, current_node_id, variables, status, expires_at, started_at)
-               VALUES (?, ?, ?, 'start', ?, 'active', ?, ?, ?)`,
-              [workspaceId, targetFlow.id, contactId, JSON.stringify(variables), expiresAtStr, utcNow(), utcNow()]
+               VALUES (?, ?, ?, 'start', ?, 'active', ?, ?)`,
+              [workspaceId, targetFlow.id, contactId, JSON.stringify(variables), expiresAtStr, utcNow()]
             );
 
             const newSession = {
